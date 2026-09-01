@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "BookStayX — Luxury Glamping & Konkan Villas",
+  "short_name": "BookStayX",
+  "description": "Handpicked luxury glamping domes, hillside villas and lakeside cottages from Pawna Lake to Konkan.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#050709",
+  "theme_color": "#050709",
+  "categories": ["travel", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icons/pwa-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pwa-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "maskable"
+    }
+  ]
+}

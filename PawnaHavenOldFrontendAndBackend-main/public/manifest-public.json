@@ -1,0 +1,37 @@
+{
+  "name": "PawnaHavenCamp",
+  "short_name": "PHC",
+  "description": "Luxury Resort & Cottage Booking near Pawna Lake",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://res.cloudinary.com/dwlvmhcav/image/upload/e_trim/w_192,h_192,c_fill,q_auto,f_png/pawnahaven/public_site_icon",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://res.cloudinary.com/dwlvmhcav/image/upload/e_trim/w_134,h_134,c_fit/w_192,h_192,c_pad,b_rgb:000000,q_auto,f_png/pawnahaven/public_site_icon",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://res.cloudinary.com/dwlvmhcav/image/upload/e_trim/w_512,h_512,c_fill,q_auto,f_png/pawnahaven/public_site_icon",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://res.cloudinary.com/dwlvmhcav/image/upload/e_trim/w_358,h_358,c_fit/w_512,h_512,c_pad,b_rgb:000000,q_auto,f_png/pawnahaven/public_site_icon",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

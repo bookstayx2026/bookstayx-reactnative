@@ -1,0 +1,16 @@
+import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from "react";
+import { getProperty, images, type Property } from "@/data/discovery";
+
+export type LocalBooking = { id:string; bookingCode:string; propertyId:string; name:string; image:number|string; location:string; dateRange:string; nights:number; guests:number; status:"pending"|"confirmed"|"completed"|"cancelled"; totalAmount:number; tab:"live"|"history" };
+const initialBookings:LocalBooking[]=[
+ {id:"b1",bookingCode:"PHC78945",propertyId:"pawna-lakeview-villa",name:"Pawna Lakeview Villa",image:images.villa1,location:"Pawna Lake, Lonavala",dateRange:"24 May – 26 May 2025",nights:2,guests:6,status:"confirmed",totalAmount:13998,tab:"live"},
+ {id:"b2",bookingCode:"PHC78946",propertyId:"pawna-lakeside-domes",name:"Lakeside Domes",image:images.hero,location:"Pawna Lake, Lonavala",dateRange:"28 May – 29 May 2025",nights:1,guests:2,status:"confirmed",totalAmount:4999,tab:"live"},
+ {id:"b3",bookingCode:"PHC71220",propertyId:"valley-view-cottage",name:"Valley View Cottage",image:images.valley,location:"Lonavala Hills",dateRange:"10 Apr – 12 Apr 2025",nights:2,guests:4,status:"completed",totalAmount:10998,tab:"history"},
+ {id:"b4",bookingCode:"PHC71001",propertyId:"private-pool-villa",name:"Private Pool Villa",image:images.villa2,location:"Lonavala",dateRange:"02 Mar – 04 Mar 2025",nights:2,guests:8,status:"cancelled",totalAmount:25998,tab:"history"},
+];
+type BookingInput={property:Property;guests:number;nights:number;dateRange:string;total:number;bookingCode?:string;status?:LocalBooking["status"]};
+type Value={savedIds:string[];bookings:LocalBooking[];toggleSaved:(id:string)=>void;isSaved:(id:string)=>boolean;confirmBooking:(input:BookingInput)=>LocalBooking};
+const Context=createContext<Value|null>(null);
+export function CustomerDataProvider({children}:PropsWithChildren){const [savedIds,setSavedIds]=useState(["pawna-lakeview-villa","private-pool-villa","seaside-serenity-villa","kashid-beach-cottage","diveagar-palm-retreat"]);const [bookings,setBookings]=useState(initialBookings);const toggleSaved=useCallback((id:string)=>setSavedIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[id,...ids]),[]);const isSaved=useCallback((id:string)=>savedIds.includes(id),[savedIds]);const confirmBooking=useCallback((input:BookingInput)=>{const code=input.bookingCode||`BSX${String(Date.now()).slice(-6)}`;const next:LocalBooking={id:code,bookingCode:code,propertyId:input.property.id,name:input.property.name,image:input.property.image,location:input.property.locationLabel,dateRange:input.dateRange,nights:input.nights,guests:input.guests,status:input.status||"confirmed",totalAmount:input.total,tab:"live"};setBookings(items=>[next,...items]);return next},[]);const value=useMemo(()=>({savedIds,bookings,toggleSaved,isSaved,confirmBooking}),[savedIds,bookings,toggleSaved,isSaved,confirmBooking]);return <Context.Provider value={value}>{children}</Context.Provider>}
+export function useCustomerData(){const value=useContext(Context);if(!value)throw new Error("useCustomerData must be used inside CustomerDataProvider");return value}
+export const savedProperties=(ids:string[])=>ids.map(getProperty).filter(Boolean) as Property[];

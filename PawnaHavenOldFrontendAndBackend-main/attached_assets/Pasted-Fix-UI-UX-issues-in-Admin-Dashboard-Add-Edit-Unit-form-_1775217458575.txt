@@ -1,0 +1,82 @@
+Fix UI/UX issues in **Admin Dashboard → Add/Edit Unit form**.
+
+### 🎯 Objective
+
+Resolve visibility, alignment, and responsiveness issues **without changing any business logic, field names, or functionality**. Only improve layout, spacing, and responsiveness.
+
+---
+
+### 🐛 Issues to Fix
+
+#### 1. Special Date Prices → Price field not visible
+
+* Price input is partially hidden or overlapped (especially on mobile)
+* Ensure both **Date + Price + Delete icon** are fully visible
+
+**Fix requirements:**
+
+* Use responsive layout (`flex` or `grid`)
+* Apply `w-full` to inputs
+* Prevent overflow clipping (`overflow-visible` where needed)
+* Maintain proper spacing (`gap-2` or `gap-3`)
+* Ensure delete icon does not overlap input
+
+---
+
+#### 2. Cancellation Policy → "days" text misaligned
+
+* "days" label is not vertically aligned with input fields
+
+**Fix requirements:**
+
+* Use `flex items-center`
+* Match input height and text alignment
+* Add consistent spacing (`ml-2`)
+* Ensure alignment is consistent across all rows
+
+---
+
+#### 3. Schedule section → Last field not visible
+
+* Last input/dropdown (AM/PM or final field) is cut off or not visible
+
+**Fix requirements:**
+
+* Prevent layout overflow
+* Use `flex-wrap` or responsive grid
+* Add `min-w` where needed to avoid shrinking
+* Ensure all fields remain visible on smaller screens
+
+---
+
+### 📱 Mobile Responsiveness (Apply across entire form)
+
+* Convert horizontal layouts to responsive:
+
+  * `flex-col sm:flex-row`
+* Ensure all inputs:
+
+  * `w-full`
+  * Proper spacing (`gap-2` or `gap-3`)
+* Avoid fixed widths that break layout
+* Prevent overflow (`max-w-full`, no clipping)
+* Maintain touch-friendly sizes (min height ~40px)
+* Ensure icons/buttons do not overlap inputs
+
+---
+
+### ⚠️ Constraints
+
+* Do NOT change logic, validation, or API integration
+* Do NOT remove or rename any fields
+* Do NOT break desktop UI
+* Keep design consistent with current theme
+
+---
+
+### ✅ Expected Result
+
+* All inputs fully visible on mobile
+* No overlapping or clipped elements
+* Proper alignment (especially "days" text)
+* Clean, responsive, and consistent layout

@@ -1,0 +1,60 @@
+Admin Dashboard Enhancement – Withdrawal Request Center
+
+Add a Bell (Request Center) icon in the Admin Dashboard header, to the left of the "Contacts" icon.
+Display a notification badge on the bell showing the total number of pending withdrawal requests.
+
+The Request Center should display all pending withdrawal requests from the Referral Dashboard.
+
+Each withdrawal request card must show:
+Name
+Mobile Number
+WhatsApp Number
+UPI ID
+Referral Code
+Referral Type
+Withdrawal Amount
+Available Balance
+Request Date/Time (if available)
+
+Top-right buttons:
+1) WhatsApp → Open WhatsApp chat for the referral's WhatsApp number.
+
+2) Call → Open the default phone dialer with the referral's mobile number.
+
+3) Pay → Launch the system UPI app chooser (Google Pay, PhonePe, Paytm, etc.). After selecting a UPI app, open its payment confirmation screen with the following fields pre-filled:
+Recipient UPI ID
+Recipient Name (if available)
+Withdrawal Amount
+Transaction Note: "Withdrawal"
+
+The admin should only need to review the details and tap Proceed to Pay (or the equivalent payment confirmation button in the selected UPI app)
+UPI URI(just pasting use if you find it useful):
+upi://pay?pa={upiId}&pn={name}&am={amount}&cu=INR&tn=Withdrawal
+
+Bottom buttons:
+4) Confirm
+Open confirmation dialog showing the withdrawal details.
+Buttons: Paid and Close.
+i) Paid:
+Mark withdrawal as Success.
+Move it to Admin → Transactions → Withdrawals.
+Add the transaction to the respective Referral Dashboard → History.
+Deduct the withdrawn amount from the referral's available earnings balance exactly once.
+ii) Close: Close the dialog.
+
+5) Reject
+Open confirmation dialog showing the withdrawal details.
+Buttons: Reject and Close.
+i) Reject:
+Mark withdrawal as Rejected.
+Move it to Admin → Transactions → Withdrawals.
+Add the transaction to the respective Referral Dashboard → History.
+Restore/keep the referral earnings balance correctly so no amount is deducted.
+ii) Close: Close the dialog.
+
+Important
+Do not change any existing functionality.
+Keep the UI consistent with the current design.
+Prevent duplicate processing (a request can be Confirmed or Rejected only once).
+Ensure referral earnings balance is always accurate after Success or Rejection.
+Use existing models and database schema where possible.

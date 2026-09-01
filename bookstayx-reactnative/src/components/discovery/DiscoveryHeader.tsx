@@ -1,0 +1,4 @@
+import { StyleSheet, Text, View } from "react-native";
+import { colors, fontFamilies } from "@/theme";
+export function DiscoveryHeader({ label, lead, accent, copy }: { label?: string; lead: string; accent: string; copy?: string }) { return <View style={styles.wrap}>{label ? <Text style={styles.label}>{label}</Text> : null}<Text style={styles.title}>{lead} <Text style={styles.accent}>{accent}</Text></Text>{copy ? <Text style={styles.copy}>{copy}</Text> : null}</View>; }
+const styles=StyleSheet.create({wrap:{alignItems:"center"},label:{color:colors.gold,fontFamily:fontFamilies.sansSemiBold,fontSize:10,letterSpacing:2,textTransform:"uppercase"},title:{marginTop:5,color:colors.text,fontFamily:fontFamilies.displaySemiBold,fontSize:32},accent:{color:colors.gold,fontFamily:fontFamilies.displayItalic},copy:{maxWidth:350,marginTop:8,textAlign:"center",color:colors.textSecondary,fontFamily:fontFamilies.sans,fontSize:12.5,lineHeight:20}});

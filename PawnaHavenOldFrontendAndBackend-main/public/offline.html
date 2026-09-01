@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Offline - Pawna Haven Camp</title>
+
+        <style>
+            :root {
+                --amber: #f59e0b;
+                --amber-light: #fbbf24;
+            }
+
+            body {
+                margin: 0;
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                background: radial-gradient(
+                    circle at top,
+                    #111111,
+                    #000000 70%
+                );
+                color: #ffffff;
+                overflow: hidden;
+            }
+
+            /* Ambient Glow */
+            body::before {
+                content: "";
+                position: absolute;
+                width: 400px;
+                height: 400px;
+                background: radial-gradient(
+                    circle,
+                    rgba(245, 158, 11, 0.15),
+                    transparent 70%
+                );
+                filter: blur(60px);
+                top: 10%;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+
+            .container {
+                position: relative;
+                z-index: 2;
+                width: 100%;
+                max-width: 440px;
+                padding: 40px 30px;
+                border-radius: 24px;
+
+                background: rgba(255, 255, 255, 0.03);
+                backdrop-filter: blur(20px);
+                border: 1px solid rgba(245, 158, 11, 0.25);
+
+                box-shadow:
+                    0 10px 40px rgba(0, 0, 0, 0.6),
+                    inset 0 0 20px rgba(255, 255, 255, 0.02);
+
+                text-align: center;
+            }
+
+            /* Icon */
+            .icon {
+                margin-bottom: 20px;
+            }
+
+            .icon svg {
+                width: 64px;
+                height: 64px;
+                stroke: var(--amber);
+                opacity: 0.95;
+            }
+
+            h1 {
+                font-size: 2.3rem;
+                margin: 10px 0;
+                color: var(--amber);
+                letter-spacing: 0.5px;
+            }
+
+            p {
+                font-size: 1rem;
+                color: #9ca3af;
+                line-height: 1.6;
+                margin-bottom: 25px;
+            }
+
+            .highlight {
+                color: #ffffff;
+                font-weight: 600;
+            }
+
+            /* Status badge */
+            .status {
+                display: inline-block;
+                padding: 6px 14px;
+                border-radius: 999px;
+                font-size: 0.75rem;
+                margin-bottom: 20px;
+                background: rgba(245, 158, 11, 0.1);
+                color: var(--amber);
+                border: 1px solid rgba(245, 158, 11, 0.3);
+                letter-spacing: 0.5px;
+            }
+
+            /* Button */
+            .btn {
+                display: inline-block;
+                padding: 13px 28px;
+                border-radius: 999px;
+                text-decoration: none;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                color: #000;
+
+                background: linear-gradient(
+                    145deg,
+                    var(--amber-light),
+                    var(--amber)
+                );
+
+                box-shadow:
+                    0 4px 20px rgba(245, 158, 11, 0.4),
+                    inset 0 1px 2px rgba(255, 255, 255, 0.3);
+
+                transition: all 0.25s ease;
+            }
+
+            .btn:hover {
+                transform: translateY(-2px) scale(1.02);
+                box-shadow: 0 8px 30px rgba(245, 158, 11, 0.6);
+            }
+
+            .footer {
+                margin-top: 18px;
+                font-size: 0.9rem;
+                color: #fbbf24; /* brighter amber */
+                font-weight: 500;
+                opacity: 1; /* full visibility */
+            }
+
+            .icon svg {
+                width: 64px;
+                height: 64px;
+                animation: pulse 2s infinite ease-in-out;
+            }
+
+            @keyframes pulse {
+                0%,
+                100% {
+                    opacity: 0.8;
+                    transform: scale(1);
+                }
+                50% {
+                    opacity: 1;
+                    transform: scale(1.05);
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <div class="status">NO INTERNET CONNECTION</div>
+
+            <!-- Enterprise SVG Icon -->
+            <div class="icon">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#F59E0B"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <!-- WiFi arcs -->
+                    <path d="M2 8.5C6.5 4.5 17.5 4.5 22 8.5" />
+                    <path d="M5 12c3.5-3 10.5-3 14 0" />
+                    <path d="M8.5 15.5c2-1.5 5-1.5 7 0" />
+
+                    <!-- Dot -->
+                    <circle
+                        cx="12"
+                        cy="19"
+                        r="1.2"
+                        fill="#F59E0B"
+                        stroke="none"
+                    />
+
+                    <!-- Slash -->
+                    <line x1="3" y1="3" x2="21" y2="21" />
+                </svg>
+            </div>
+
+            <h1>You're Offline</h1>
+
+            <p>
+                We’re unable to connect to
+                <span class="highlight">Pawna Haven Camp</span> services. Please
+                check your internet connection and try again.
+            </p>
+
+            <a href="javascript:window.location.reload();" class="btn">
+                Retry Connection
+            </a>
+
+            <div class="footer">
+                Automatically reconnecting when network is restored...
+            </div>
+        </div>
+
+        <script>
+            // Auto reload when connection is back
+            window.addEventListener("online", () => {
+                if (window.location.pathname === "/offline.html") {
+                    const returnUrl = sessionStorage.getItem("offline_return");
+                    sessionStorage.removeItem("offline_return");
+                    window.location.href = returnUrl || "/";
+                } else {
+                    location.reload();
+                }
+            });
+        </script>
+    </body>
+</html>

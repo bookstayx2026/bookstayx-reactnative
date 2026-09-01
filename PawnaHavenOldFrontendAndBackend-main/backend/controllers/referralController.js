@@ -1,0 +1,376 @@
+const ReferralService = require('../services/referralService');
+const QRCode = require('qrcode');
+const { query } = require('../db');
+
+const ReferralController = {
+  async getTopEarners(req, res) {
+    try {
+      const { period } = req.query;
+      const earners = await ReferralService.getTopEarners(period);
+      res.json(earners);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async validateCode(req, res) {
+    try {
+      const { code } = req.params;
+      if (!code) return res.status(400).json({ valid: false, error: 'Code is required' });
+      const result = await query(
+        "SELECT id, username, referral_code, referral_type, linked_property_id, linked_property_slug, parent_referral_id FROM referral_users WHERE referral_code = $1 AND status = 'active'",
+        [code.toUpperCase()]
+      );
+      if (result.rows.length > 0) {
+        const user = result.rows[0];
+        let linkedPropertySlug = user.linked_property_slug || null;
+        if (user.referral_type === 'owners_b2b' && user.parent_referral_id) {
+          const parentRes = await query(
+            'SELECT linked_property_slug FROM referral_users WHERE id = $1',
+            [user.parent_referral_id]
+          );
+          linkedPropertySlug = parentRes.rows[0]?.linked_property_slug || null;
+        }
+        return res.json({ 
+          valid: true, 
+          referrer: user.username,
+          referral_type: user.referral_type || 'public',
+          linked_property_id: user.linked_property_id || null,
+          linked_property_slug: linkedPropertySlug
+        });
+      }
+      return res.json({ valid: false });
+    } catch (error) {
+      res.status(400).json({ valid: false, error: error.message });
+    }
+  },
+
+  async getStats(req, res) {
+    try {
+      const stats = await ReferralService.getUserStats(req.user.id);
+      res.json(stats);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async getTransactions(req, res) {
+    try {
+      const transactions = await ReferralService.getUserTransactions(req.user.id);
+      res.json(transactions);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async getShareInfo(req, res) {
+    try {
+      const shareInfo = await ReferralService.getShareInfo(req.user.id);
+      res.json(shareInfo);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async ownerLookup(req, res) {
+    try {
+      const { mobile } = req.params;
+      if (!mobile) return res.status(400).json({ error: 'Mobile number is required' });
+      const result = await query(
+        "SELECT id, username, referral_code, referral_type, linked_property_id, linked_property_slug, status FROM referral_users WHERE referral_otp_number = $1 AND referral_type = 'owner'",
+        [mobile]
+      );
+      if (result.rows.length > 0) {
+        return res.json({ found: true, data: result.rows[0] });
+      }
+      return res.json({ found: false });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async getOwnerB2BList(req, res) {
+    try {
+      const { mobile } = req.query;
+      if (!mobile) return res.status(400).json({ found: false, error: 'Mobile is required' });
+      const ownerRes = await query(
+        "SELECT id FROM referral_users WHERE referral_otp_number = $1 AND referral_type = 'owner'",
+        [mobile]
+      );
+      if (ownerRes.rows.length === 0) {
+        return res.json({ found: true, list: [] });
+      }
+      const ownerId = ownerRes.rows[0].id;
+      const b2bRes = await query(
+        `SELECT b.id, b.username, b.referral_otp_number, b.referral_code, b.referral_url,
+                o.username AS owner_name,
+                p.title AS property_name
+         FROM referral_users b
+         JOIN referral_users o ON o.id = b.parent_referral_id
+         LEFT JOIN properties p ON p.id = o.linked_property_id
+         WHERE b.parent_referral_id = $1
+           AND b.visible_to_owner = true
+           AND b.referral_type = 'owners_b2b'
+           AND b.status NOT IN ('owner_deleted', 'deleted')
+         ORDER BY b.created_at DESC`,
+        [ownerId]
+      );
+      const domain = process.env.REPLIT_DOMAINS?.split(",")[0] || process.env.REPLIT_DEV_DOMAIN || "pawnahavencamp.com";
+      const listWithQr = await Promise.all(
+        b2bRes.rows.map(async (partner) => {
+          const link = partner.referral_url || `https://${domain}/?ref=${partner.referral_code}`;
+          const qrDataUrl = await QRCode.toDataURL(link, {
+            width: 400,
+            margin: 2,
+            color: { dark: "#000000", light: "#ffffff" },
+          });
+          return { ...partner, referral_qr: qrDataUrl };
+        })
+      );
+      return res.json({ found: true, list: listWithQr });
+    } catch (error) {
+      res.status(400).json({ found: false, error: error.message });
+    }
+  },
+
+  async hideOwnerB2B(req, res) {
+    try {
+      const { id, ownerMobile } = req.body;
+      if (!id || !ownerMobile) return res.status(400).json({ success: false, error: 'id and ownerMobile are required' });
+      const ownerRes = await query(
+        "SELECT id FROM referral_users WHERE referral_otp_number = $1 AND referral_type = 'owner'",
+        [ownerMobile]
+      );
+      if (ownerRes.rows.length === 0) {
+        return res.status(403).json({ success: false, error: 'Owner not found' });
+      }
+      const ownerId = ownerRes.rows[0].id;
+      const check = await query(
+        "SELECT id FROM referral_users WHERE id = $1 AND parent_referral_id = $2 AND referral_type = 'owners_b2b'",
+        [id, ownerId]
+      );
+      if (check.rows.length === 0) {
+        return res.status(403).json({ success: false, error: 'Not authorized to hide this record' });
+      }
+      await query('UPDATE referral_users SET visible_to_owner = false WHERE id = $1', [id]);
+      return res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  },
+
+  async deleteOwnerB2B(req, res) {
+    try {
+      const { id, ownerMobile } = req.body;
+      if (!id || !ownerMobile) return res.status(400).json({ success: false, error: 'id and ownerMobile are required' });
+      const ownerRes = await query(
+        "SELECT id FROM referral_users WHERE referral_otp_number = $1 AND referral_type = 'owner'",
+        [ownerMobile]
+      );
+      if (ownerRes.rows.length === 0) {
+        return res.status(403).json({ success: false, error: 'Owner not found' });
+      }
+      const ownerId = ownerRes.rows[0].id;
+      const check = await query(
+        "SELECT id FROM referral_users WHERE id = $1 AND parent_referral_id = $2 AND referral_type = 'owners_b2b'",
+        [id, ownerId]
+      );
+      if (check.rows.length === 0) {
+        return res.status(403).json({ success: false, error: 'Not authorized to delete this record' });
+      }
+      await query("UPDATE referral_users SET status = 'owner_deleted' WHERE id = $1", [id]);
+      return res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  },
+
+  async ownerLookupByProperty(req, res) {
+    try {
+      const { propertyId } = req.params;
+      if (!propertyId) return res.status(400).json({ error: 'Property ID is required' });
+      const propResult = await query(
+        'SELECT id, property_id FROM properties WHERE property_id = $1 OR id::text = $1',
+        [propertyId]
+      );
+      if (propResult.rows.length === 0) {
+        return res.json({ found: false });
+      }
+      const prop = propResult.rows[0];
+      const result = await query(
+        "SELECT id, username, referral_code, referral_otp_number, referral_type, linked_property_id, linked_property_slug, status FROM referral_users WHERE (property_id = $1 OR linked_property_id = $2) AND referral_type = 'owner'",
+        [prop.property_id, prop.id]
+      );
+      if (result.rows.length > 0) {
+        return res.json({ found: true, data: result.rows[0] });
+      }
+      return res.json({ found: false });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+
+  async getInProcess(req, res) {
+    try {
+      const userId = req.user.id;
+      const [listRes, sumRes] = await Promise.all([
+        query(
+          `SELECT rt.id AS transaction_id, rt.amount AS referrer_commission,
+                  b.booking_id, b.property_name, b.guest_name,
+                  b.checkin_datetime, b.checkout_datetime
+           FROM referral_transactions rt
+           JOIN bookings b ON b.id = rt.booking_id
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status = 'in_process'
+           ORDER BY b.checkin_datetime ASC`,
+          [userId]
+        ),
+        query(
+          `SELECT COALESCE(SUM(rt.amount), 0) AS in_process_amount
+           FROM referral_transactions rt
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status = 'in_process'`,
+          [userId]
+        ),
+      ]);
+      return res.json({
+        in_process: listRes.rows,
+        in_process_amount: parseFloat(sumRes.rows[0].in_process_amount) || 0,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  async getReferralHistory(req, res) {
+    try {
+      const userId = req.user.id;
+
+      const [availableRes, cancelledRes, noShowCompRes, withdrawalRes, cancel50Res, cancelFullRes] = await Promise.all([
+        query(
+          `SELECT rt.amount, rt.created_at AS date, rt.source,
+                  b.property_name, b.guest_name
+           FROM referral_transactions rt
+           LEFT JOIN bookings b ON b.id = rt.booking_id
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status = 'available'
+             AND rt.source NOT IN ('no_show_compensation', 'cancellation_50_payout', 'cancellation_owner_compensation')
+           ORDER BY rt.created_at DESC`,
+          [userId]
+        ),
+        query(
+          `SELECT rt.amount, COALESCE(rt.updated_at, rt.created_at) AS date,
+                  b.property_name, b.guest_name, rt.status
+           FROM referral_transactions rt
+           LEFT JOIN bookings b ON b.id = rt.booking_id
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status IN ('canceled', 'no_show_canceled')
+           ORDER BY rt.created_at DESC`,
+          [userId]
+        ),
+        query(
+          `SELECT rt.amount, rt.created_at AS date
+           FROM referral_transactions rt
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status = 'available'
+             AND rt.source = 'no_show_compensation'
+           ORDER BY rt.created_at DESC`,
+          [userId]
+        ),
+        query(
+          `SELECT id, amount, upi_id, status, payout_id, created_at AS date
+           FROM referral_transactions
+           WHERE referral_user_id = $1
+             AND type = 'withdrawal'
+             AND status IN ('completed', 'rejected')
+           ORDER BY created_at DESC`,
+          [userId]
+        ),
+        query(
+          `SELECT rt.amount, rt.created_at AS date, b.property_name, b.guest_name
+           FROM referral_transactions rt
+           LEFT JOIN bookings b ON b.id = rt.booking_id
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status = 'available'
+             AND rt.source = 'cancellation_50_payout'
+           ORDER BY rt.created_at DESC`,
+          [userId]
+        ),
+        query(
+          `SELECT rt.amount, rt.created_at AS date, b.property_name, b.guest_name
+           FROM referral_transactions rt
+           LEFT JOIN bookings b ON b.id = rt.booking_id
+           WHERE rt.referral_user_id = $1
+             AND rt.type = 'earning'
+             AND rt.status = 'available'
+             AND rt.source = 'cancellation_owner_compensation'
+           ORDER BY rt.created_at DESC`,
+          [userId]
+        ),
+      ]);
+
+      const history = [
+        ...availableRes.rows.map(r => ({
+          type: 'booking_success',
+          property_name: r.property_name,
+          guest_name: r.guest_name,
+          amount: parseFloat(r.amount) || 0,
+          date: r.date,
+          message: 'Booking Completed',
+        })),
+        ...cancelledRes.rows.map(r => ({
+          type: 'booking_cancelled',
+          property_name: r.property_name,
+          guest_name: r.guest_name,
+          amount: parseFloat(r.amount) || 0,
+          date: r.date,
+          message: 'Booking Cancelled',
+        })),
+        ...noShowCompRes.rows.map(r => ({
+          type: 'no_show_bonus',
+          amount: parseFloat(r.amount) || 0,
+          date: r.date,
+          message: 'No-Show Compensation',
+        })),
+        ...withdrawalRes.rows.map(r => ({
+          type: r.status === 'completed' ? 'withdrawal_paid' : 'withdrawal_rejected',
+          amount: parseFloat(r.amount),
+          date: r.date,
+          message: r.status === 'completed' ? 'Withdrawal Paid' : 'Withdrawal Rejected',
+          upi_id: r.upi_id,
+          payout_id: r.payout_id || null,
+        })),
+        ...cancel50Res.rows.map(r => ({
+          type: 'cancellation_payout',
+          property_name: r.property_name,
+          guest_name: r.guest_name,
+          amount: parseFloat(r.amount) || 0,
+          date: r.date,
+          message: 'Booking Cancelled – 50% Payout',
+        })),
+        ...cancelFullRes.rows.map(r => ({
+          type: 'cancellation_compensation',
+          property_name: r.property_name,
+          guest_name: r.guest_name,
+          amount: parseFloat(r.amount) || 0,
+          date: r.date,
+          message: 'Booking Cancelled – Owner Compensation',
+        })),
+      ];
+
+      history.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      return res.json({ history });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+};
+
+module.exports = ReferralController;
