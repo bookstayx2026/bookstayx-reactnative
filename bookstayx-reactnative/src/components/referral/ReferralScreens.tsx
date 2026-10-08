@@ -1,29 +1,801 @@
-/* API-backed effects intentionally hydrate screen state when the selected period or persisted session changes. */
-/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
-import { Image } from "expo-image";
-import * as Clipboard from "expo-clipboard";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, Crown, Fingerprint, Gift, History, Link2, QrCode, ShieldCheck, Smartphone, Trophy, UserRound, WalletCards, Zap } from "lucide-react-native";
-import { addReferralUpi, getReferralDashboard, getReferralHistory, getReferralShare, getReferralUpis, getTopEarners, loginReferral, registerReferral, requestReferralOtp, verifyReferralOtp, withdrawReferral, type ReferralDashboard, type ShareInfo, type TopEarner } from "@/services/api";
-import { useAuth } from "@/components/auth";
-import { colors, fontFamilies, layout } from "@/theme";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Coins,
+  Crown,
+  Gift,
+  QrCode,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Trophy,
+  UserRound,
+  Users,
+  Wallet,
+  Zap,
+} from "lucide-react-native";
+import { getTopEarners, type TopEarner } from "@/services/api";
+import { colors, fontFamilies, layout, radii } from "@/theme";
+import { useIsDesktop } from "@/hooks/use-window-class";
 
-const money=(n:number)=>`₹${Number(n||0).toLocaleString("en-IN")}`;
-function Page({children}:{children:React.ReactNode}){return <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}><View style={s.page}>{children}</View></ScrollView>}
-function Header({title}:{title:string}){return <View style={s.header}><Pressable accessibilityLabel="Go back" onPress={()=>router.back()} style={s.back}><ArrowLeft color={colors.text}/></Pressable><Text style={s.headerTitle}>{title}</Text></View>}
-function Primary({label,onPress,busy=false,disabled=false}:{label:string;onPress:()=>void;busy?:boolean;disabled?:boolean}){return <Pressable accessibilityRole="button" disabled={busy||disabled} onPress={onPress} style={[s.primary,(busy||disabled)&&{opacity:.55}]}>{busy?<ActivityIndicator color={colors.actionInk}/>:<><Text style={s.primaryText}>{label}</Text><ArrowRight size={16} color={colors.actionInk}/></>}</Pressable>}
-function Field({label,value,onChangeText,placeholder,keyboardType}:{label:string;value:string;onChangeText:(v:string)=>void;placeholder:string;keyboardType?:"phone-pad"|"number-pad"}){return <View><Text style={s.label}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.textMuted} keyboardType={keyboardType} autoCapitalize="none" style={s.input}/></View>}
-function Message({error,success}:{error?:string;success?:string}){if(!error&&!success)return null;return <View style={[s.message,{borderColor:error?"rgba(239,68,68,.4)":"rgba(61,255,138,.35)"}]}><Text style={[s.messageText,{color:error?"#FCA5A5":colors.success}]}>{error||success}</Text></View>}
+const money = (n: number) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
-export function ReferralHomeScreen(){const[period,setPeriod]=useState<"month"|"all">("all");const[earners,setEarners]=useState<TopEarner[]>([]);const[loading,setLoading]=useState(true);useEffect(()=>{setLoading(true);getTopEarners(period).then(setEarners).catch(()=>setEarners([])).finally(()=>setLoading(false))},[period]);const display=earners.length?earners:[{name:"Sujay",amount:26840},{name:"Anjali",amount:18420},{name:"Rahul",amount:12650}];return <Page><Header title="Referral Earning"/><View style={s.actions}><Action Icon={Check} tone="green" title="Check Earning" copy="Check your referral earnings & history" onPress={()=>router.push("/referrals/dashboard")}/><Action Icon={Zap} title="Generate New Code" copy="Generate a new referral code to invite" onPress={()=>router.push("/referrals/generate")}/></View><View style={s.panel}><View style={s.panelHead}><View style={s.inline}><Trophy size={19} color={colors.gold}/><Text style={s.panelTitle}>Top Earners</Text></View><View style={s.segment}><Pressable onPress={()=>setPeriod("month")} style={[s.segmentButton,period==="month"&&s.segmentActive]}><Text style={s.segmentText}>Month</Text></Pressable><Pressable onPress={()=>setPeriod("all")} style={[s.segmentButton,period==="all"&&s.segmentActive]}><Text style={s.segmentText}>All Time</Text></Pressable></View></View>{loading?<ActivityIndicator style={{margin:24}} color={colors.gold}/>:display.slice(0,3).map((e,i)=><View key={String(e.id||e.username||e.name||i)} style={s.earner}><View style={s.rank}><Text style={s.rankText}>#{i+1}</Text></View><View style={s.avatar}>{i===0?<Crown size={18} color={colors.gold}/>:<UserRound size={18} color={colors.textSecondary}/>}</View><View style={{flex:1}}><Text style={s.earnerName}>{e.username||e.name||"Partner"}</Text><Text style={s.muted}>Successful Partner</Text></View><Text style={s.amount}>{money(Number(e.total_earnings||e.earnings||e.amount||0))}</Text></View>)}</View><View style={s.invite}><Gift size={25} color={colors.gold}/><Text style={s.inviteTitle}>Invite Friends & Earn Rewards</Text><Text style={s.copy}>Get rewarded for every eligible booking made using your referral code.</Text><Primary label="Start Inviting" onPress={()=>router.push("/referrals/generate")}/></View></Page>}
-function Action({Icon,title,copy,onPress,tone="gold"}:{Icon:typeof Check;title:string;copy:string;onPress:()=>void;tone?:"gold"|"green"}){const color=tone==="green"?colors.success:colors.gold;return <Pressable onPress={onPress} style={[s.action,{borderColor:color}]}><View style={[s.actionIcon,{backgroundColor:`${color}18`}]}><Icon size={17} color={color}/></View><View style={{flex:1}}><Text style={s.actionTitle}>{title}</Text><Text style={s.muted}>{copy}</Text></View></Pressable>}
+export function ReferralHomeScreen() {
+  const [period, setPeriod] = useState<"month" | "all">("all");
+  const [earners, setEarners] = useState<TopEarner[]>([]);
+  const [loading, setLoading] = useState(true);
+  const isDesktop = useIsDesktop();
 
-export function ReferralGenerateScreen(){const[step,setStep]=useState<"details"|"otp"|"done">("details");const[name,setName]=useState("");const[mobile,setMobile]=useState("");const[code,setCode]=useState("");const[otp,setOtp]=useState("");const[busy,setBusy]=useState(false);const[error,setError]=useState("");const submit=async()=>{setError("");setBusy(true);try{const clean=mobile.replace(/\D/g,"");if(step==="details"){if(name.trim().length<2||clean.length!==10||code.trim().length<4)throw new Error("Enter your full name, a valid mobile number, and at least 4 characters for the referral code.");await requestReferralOtp(clean,"referral_register");setStep("otp")}else if(step==="otp"){const verified=await verifyReferralOtp(clean,otp,"referral_register");if(verified.exists)throw new Error("This mobile number is already registered. Use Check Earning to log in.");await registerReferral(verified.token,name.trim(),code.trim().toUpperCase());setStep("done")}}catch(e){setError(e instanceof Error?e.message:"Unable to complete registration.")}finally{setBusy(false)}};if(step==="done")return <Page><Header title="Generate Code"/><View style={s.success}><CheckCircle2 size={50} color={colors.success}/><Text style={s.successTitle}>Referral code created</Text><Text style={s.copy}>Your code {code.toUpperCase()} is ready. Sign in through Check Earning to open your dashboard.</Text><Primary label="Open Check Earning" onPress={()=>router.replace("/referrals/dashboard")}/></View></Page>;return <Page><Header title="Generate Code"/><View style={s.center}><View style={s.fingerprint}><Fingerprint size={36} color={colors.gold}/></View><Text style={s.bigTitle}>Create New Referral code</Text><Text style={s.copy}>Enter your details to generate a new unique referral code.</Text></View><View style={s.form}>{step==="details"?<><Field label="Full Name" value={name} onChangeText={setName} placeholder="Enter Your Full Name"/><Field label="Mobile Number" value={mobile} onChangeText={setMobile} placeholder="Enter Mobile Number to get OTP" keyboardType="phone-pad"/><Field label="Create Your Referral Code" value={code} onChangeText={v=>setCode(v.toUpperCase().replace(/[^A-Z0-9]/g,""))} placeholder="e.g. ABC123"/></>:<><View style={s.inline}><ShieldCheck color={colors.gold}/><Text style={s.formTitle}>Verify your mobile</Text></View><Text style={s.copy}>Enter the OTP sent to +91 {mobile}.</Text><Field label="One-time password" value={otp} onChangeText={v=>setOtp(v.replace(/\D/g,"").slice(0,6))} placeholder="••••••" keyboardType="number-pad"/></>}<Message error={error}/><Primary label={step==="details"?"Send OTP":"Verify & Create Code"} busy={busy} onPress={submit}/></View></Page>}
+  useEffect(() => {
+    setLoading(true);
+    getTopEarners(period)
+      .then(setEarners)
+      .catch(() => setEarners([]))
+      .finally(() => setLoading(false));
+  }, [period]);
 
-export function ReferralDashboardScreen(){const{session,signIn,signOut}=useAuth();const token=session?.role==="referral"?session.tokens.accessToken:null;const[step,setStep]=useState<"mobile"|"otp">("mobile");const[mobile,setMobile]=useState("");const[otp,setOtp]=useState("");const[busy,setBusy]=useState(false);const[error,setError]=useState("");const[data,setData]=useState<ReferralDashboard|null>(null);const[shareInfo,setShareInfo]=useState<ShareInfo|null>(null);const[history,setHistory]=useState<{type:string;message:string;amount:number;date:string;property_name?:string}[]>([]);const[upiMobile,setUpiMobile]=useState("");const[beneficiary,setBeneficiary]=useState("");const[withdrawAmount,setWithdrawAmount]=useState("");const[upiId,setUpiId]=useState("");const[notice,setNotice]=useState("");const load=async(t:string)=>{const[d,share,h,upis]=await Promise.all([getReferralDashboard(t),getReferralShare(t),getReferralHistory(t),getReferralUpis(t)]);setData(d);setShareInfo(share);setHistory(h.history||[]);const first=upis.upi_ids?.find(u=>u.is_default)||upis.upi_ids?.[0];setUpiId(first?.upi_id||first?.mobile_number||"")};useEffect(()=>{if(token)void load(token).catch(e=>setError(e instanceof Error?e.message:"Unable to load dashboard."))},[token]);const authenticate=async()=>{setError("");setBusy(true);try{const clean=mobile.replace(/\D/g,"");if(step==="mobile"){if(clean.length!==10)throw new Error("Enter a valid 10-digit mobile number.");await requestReferralOtp(clean,"referral_login");setStep("otp")}else{const verified=await verifyReferralOtp(clean,otp,"referral_login");if(!verified.exists)throw new Error("No referral account exists for this mobile number.");const result=await loginReferral(verified.token);await signIn({role:"referral",tokens:{accessToken:result.token,refreshToken:result.refreshToken},identity:{id:result.user.id,email:result.user.username}})}}catch(e){setError(e instanceof Error?e.message:"Login failed.")}finally{setBusy(false)}};if(!token)return <Page><Header title="Check Earning"/><View style={s.center}><Smartphone size={42} color={colors.gold}/><Text style={s.bigTitle}>Referral Login</Text><Text style={s.copy}>Use the mobile number linked with your referral code.</Text></View><View style={s.form}>{step==="mobile"?<Field label="Mobile Number" value={mobile} onChangeText={setMobile} placeholder="9876543210" keyboardType="phone-pad"/>:<Field label="One-time password" value={otp} onChangeText={v=>setOtp(v.replace(/\D/g,"").slice(0,6))} placeholder="••••••" keyboardType="number-pad"/>}<Message error={error}/><Primary label={step==="mobile"?"Send OTP":"Verify & Login"} busy={busy} onPress={authenticate}/></View></Page>;if(!data)return <Page><Header title="Referral Earning"/><ActivityIndicator style={{marginTop:80}} color={colors.gold}/><Message error={error}/></Page>;const copyValue=async(v:string,label:string)=>{await Clipboard.setStringAsync(v);setNotice(`${label} copied`);setTimeout(()=>setNotice(""),1500)};const addUpi=async()=>{setError("");setBusy(true);try{await addReferralUpi(token,upiMobile.replace(/\D/g,""),beneficiary.trim());setNotice("Payout mobile saved.");await load(token)}catch(e){setError(e instanceof Error?e.message:"Unable to save payout details.")}finally{setBusy(false)}};const withdraw=async()=>{setError("");setBusy(true);try{await withdrawReferral(token,Number(withdrawAmount),upiId);setNotice("Withdrawal request submitted.");setWithdrawAmount("");await load(token)}catch(e){setError(e instanceof Error?e.message:"Unable to submit withdrawal.")}finally{setBusy(false)}};return <Page><View style={s.dashboardHead}><View><Text style={s.bigTitle}>Referral <Text style={{color:colors.gold}}>Earning</Text></Text><Text style={s.copy}>Welcome back, {data.username}</Text></View><Pressable onPress={()=>void signOut()}><Text style={s.signOut}>Sign out</Text></Pressable></View><View style={s.stats}><Stat label="Total Earned" value={money(data.total_earnings)}/><Stat label="Total Referrals" value={String(data.total_referrals)}/><Stat label="Available" value={money(data.available_balance)}/><Stat label="In-Process" value={money(data.pending_withdrawal_amount)}/></View>{shareInfo?<View style={s.panel}><View style={s.center}><QrCode color={colors.gold}/><Text style={s.panelTitle}>Your QR Code</Text>{shareInfo.referralQrCode?<Image source={{uri:shareInfo.referralQrCode}} contentFit="contain" style={s.qr}/>:null}</View><CopyRow Icon={Link2} label="Referral Link" value={shareInfo.referralLink} onCopy={()=>void copyValue(shareInfo.referralLink,"Link")}/><CopyRow Icon={Gift} label="Referral Code" value={shareInfo.referralCode} onCopy={()=>void copyValue(shareInfo.referralCode,"Code")}/><Primary label="Share Referral Link" onPress={()=>void Share.share({message:shareInfo.referralLink})}/></View>:null}<View style={s.panel}><View style={s.inline}><WalletCards color={colors.gold}/><Text style={s.panelTitle}>Saved Mobile Numbers</Text></View><Field label="Mobile Number" value={upiMobile} onChangeText={setUpiMobile} placeholder="e.g. 9876543210" keyboardType="phone-pad"/><Field label="Beneficiary Name" value={beneficiary} onChangeText={setBeneficiary} placeholder="e.g. Aish More"/><Primary label="Save Payout Mobile" busy={busy} onPress={addUpi}/></View><View style={s.panel}><Text style={s.panelTitle}>Request Withdrawal</Text><Field label="Amount" value={withdrawAmount} onChangeText={setWithdrawAmount} placeholder="e.g. 500" keyboardType="number-pad"/><Text style={s.muted}>Payout destination: {upiId||"Save a mobile number first"}</Text><Primary label="Request Withdrawal" busy={busy} disabled={!upiId} onPress={withdraw}/></View><Message error={error} success={notice}/><View style={s.panel}><View style={s.inline}><History color={colors.gold}/><Text style={s.panelTitle}>History</Text></View>{history.length?history.map((h,i)=><View key={`${h.date}${i}`} style={s.history}><View style={{flex:1}}><Text style={s.actionTitle}>{h.message}</Text><Text style={s.muted}>{h.property_name||new Date(h.date).toLocaleDateString("en-IN")}</Text></View><Text style={s.amount}>{money(h.amount)}</Text></View>):<Text style={s.empty}>Completed referrals and payouts will appear here.</Text>}</View></Page>}
-function Stat({label,value}:{label:string;value:string}){return <View style={s.stat}><Text style={s.statLabel}>{label}</Text><Text style={s.statValue}>{value}</Text></View>}
-function CopyRow({Icon,label,value,onCopy}:{Icon:typeof Link2;label:string;value:string;onCopy:()=>void}){return <View style={s.copyRow}><Icon size={17} color={colors.gold}/><View style={{flex:1}}><Text style={s.label}>{label}</Text><Text numberOfLines={1} style={s.copyValue}>{value}</Text></View><Pressable accessibilityLabel={`Copy ${label}`} onPress={onCopy} style={s.copyButton}><Copy size={16} color={colors.gold}/></Pressable></View>}
+  const displayEarners: { name: string; amount: number }[] = earners.length
+    ? earners.map((e) => ({
+        name: e.username || e.name || "Partner",
+        amount: Number(e.total_earnings || e.earnings || e.amount || 0),
+      }))
+    : [
+        { name: "Sujay", amount: 26840 },
+        { name: "Anjali", amount: 18420 },
+        { name: "Rahul", amount: 12650 },
+      ];
 
-const s=StyleSheet.create({scroll:{flexGrow:1,alignItems:"center",backgroundColor:colors.background,paddingBottom:30},page:{width:"100%",maxWidth:layout.sourceMaxWidth,padding:16,gap:16},header:{height:52,flexDirection:"row",alignItems:"center",justifyContent:"center"},back:{position:"absolute",left:0,width:48,height:48,alignItems:"center",justifyContent:"center",borderRadius:14,borderWidth:1,borderColor:colors.hairline,backgroundColor:colors.surfaceRaised},headerTitle:{fontFamily:fontFamilies.displaySemiBold,fontSize:27,color:colors.text},actions:{flexDirection:"row",gap:10},action:{flex:1,minHeight:92,flexDirection:"row",alignItems:"flex-start",gap:9,padding:10,borderRadius:16,borderWidth:1,backgroundColor:colors.surfaceRaised},actionIcon:{width:34,height:34,borderRadius:17,alignItems:"center",justifyContent:"center"},actionTitle:{fontFamily:fontFamilies.sansBold,fontSize:12.5,color:colors.text},muted:{marginTop:3,fontFamily:fontFamilies.sans,fontSize:10.5,lineHeight:15,color:colors.textMuted},panel:{gap:14,padding:15,borderRadius:18,borderWidth:1,borderColor:"rgba(255,255,255,.08)",backgroundColor:colors.surfaceRaised},panelHead:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},inline:{flexDirection:"row",alignItems:"center",gap:8},panelTitle:{fontFamily:fontFamilies.displaySemiBold,fontSize:21,color:colors.text},segment:{flexDirection:"row",padding:3,borderRadius:99,backgroundColor:colors.surface},segmentButton:{paddingHorizontal:10,paddingVertical:7,borderRadius:99,borderWidth:1,borderColor:"transparent"},segmentActive:{borderColor:colors.gold},segmentText:{fontFamily:fontFamilies.sansSemiBold,fontSize:10,color:colors.textSecondary},earner:{minHeight:65,flexDirection:"row",alignItems:"center",gap:9,paddingVertical:8,borderBottomWidth:1,borderBottomColor:"rgba(255,255,255,.07)"},rank:{width:38,height:38,alignItems:"center",justifyContent:"center",borderRadius:10,borderWidth:1,borderColor:colors.hairline},rankText:{fontFamily:fontFamilies.sansBold,fontSize:12,color:colors.gold},avatar:{width:42,height:42,borderRadius:21,alignItems:"center",justifyContent:"center",backgroundColor:colors.surface},earnerName:{fontFamily:fontFamilies.sansSemiBold,fontSize:14,color:colors.text},amount:{fontFamily:fontFamilies.sansBold,fontSize:14,color:colors.gold},invite:{alignItems:"flex-start",padding:18,borderRadius:18,borderWidth:1,borderColor:colors.hairline,backgroundColor:"#12100A"},inviteTitle:{marginTop:10,fontFamily:fontFamilies.displaySemiBold,fontSize:23,color:colors.text},copy:{marginTop:7,fontFamily:fontFamilies.sans,fontSize:12.5,lineHeight:19,color:colors.textMuted},primary:{minHeight:50,width:"100%",marginTop:4,flexDirection:"row",alignItems:"center",justifyContent:"center",gap:8,borderRadius:14,backgroundColor:colors.goldAction},primaryText:{fontFamily:fontFamilies.sansBold,fontSize:14,color:colors.actionInk},center:{alignItems:"center"},fingerprint:{width:72,height:72,alignItems:"center",justifyContent:"center",borderRadius:20,borderWidth:1,borderColor:colors.hairline,backgroundColor:"#1A150C"},bigTitle:{marginTop:10,fontFamily:fontFamilies.displaySemiBold,fontSize:29,color:colors.text},form:{gap:18,padding:16,borderRadius:20,borderWidth:1,borderColor:colors.hairline,backgroundColor:"#12100C"},formTitle:{fontFamily:fontFamilies.sansSemiBold,fontSize:15,color:colors.text},label:{marginBottom:7,fontFamily:fontFamilies.sansSemiBold,fontSize:12,color:colors.textSecondary},input:{minHeight:50,paddingHorizontal:14,borderRadius:14,borderWidth:1,borderColor:"rgba(255,255,255,.12)",backgroundColor:colors.surface,color:colors.text,fontFamily:fontFamilies.sans,fontSize:15,outlineStyle:"none" as never},message:{padding:11,borderRadius:12,borderWidth:1,backgroundColor:colors.surface},messageText:{fontFamily:fontFamilies.sansMedium,fontSize:11.5,lineHeight:17},success:{minHeight:500,alignItems:"center",justifyContent:"center"},successTitle:{marginTop:15,fontFamily:fontFamilies.displaySemiBold,fontSize:29,color:colors.text},dashboardHead:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},signOut:{fontFamily:fontFamilies.sansSemiBold,fontSize:11,color:"#FCA5A5"},stats:{flexDirection:"row",flexWrap:"wrap",gap:8},stat:{width:"48.5%",minHeight:86,padding:13,borderRadius:14,backgroundColor:colors.surfaceRaised},statLabel:{fontFamily:fontFamilies.sansSemiBold,fontSize:10,color:colors.textMuted,textTransform:"uppercase"},statValue:{marginTop:9,fontFamily:fontFamilies.sansBold,fontSize:21,color:colors.gold},qr:{width:170,height:170,marginTop:8,borderRadius:10,backgroundColor:"white"},copyRow:{minHeight:62,flexDirection:"row",alignItems:"center",gap:10,padding:10,borderRadius:13,backgroundColor:colors.surface},copyValue:{fontFamily:fontFamilies.sansMedium,fontSize:12,color:colors.text},copyButton:{width:44,height:44,alignItems:"center",justifyContent:"center",borderRadius:22,backgroundColor:"rgba(224,184,74,.1)"},history:{minHeight:58,flexDirection:"row",alignItems:"center",borderBottomWidth:1,borderBottomColor:"rgba(255,255,255,.07)"},empty:{paddingVertical:20,textAlign:"center",fontFamily:fontFamilies.sans,fontSize:12,color:colors.textMuted}});
+  return (
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={[styles.scroll, isDesktop && styles.scrollDesktop]}
+    >
+      <View style={[styles.container, isDesktop && styles.containerDesktop]}>
+        
+        {/* Hero Banner Section */}
+        <View style={[styles.heroBanner, isDesktop && styles.heroBannerDesktop]}>
+          <View style={styles.badgeRow}>
+            <View style={styles.badge}>
+              <Sparkles size={11} color={colors.gold} />
+              <Text style={styles.badgeText}>PARTNER REWARDS PROGRAM</Text>
+            </View>
+          </View>
+
+          <View style={[styles.heroRow, isDesktop && styles.heroRowDesktop]}>
+            <View style={styles.heroLeft}>
+              <Text style={[styles.heroTitle, isDesktop && styles.heroTitleDesktop]}>
+                Refer Friends & Earn <Text style={styles.goldText}>Real Cash</Text>
+              </Text>
+              <Text style={[styles.heroSubtitle, isDesktop && styles.heroSubtitleDesktop]}>
+                Share your love for scenic weekend getaways. Get rewarded with direct cash payouts for every confirmed stay booked by your friends and family.
+              </Text>
+            </View>
+
+            <View style={[styles.heroActionCard, isDesktop && styles.heroActionCardDesktop]}>
+              <View style={styles.heroActionTop}>
+                <View style={styles.walletIconCircle}>
+                  <Wallet size={20} color={colors.gold} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionCardTitle}>Referral Dashboard</Text>
+                  <Text style={styles.actionCardSubtitle}>
+                    View earnings, payouts & your unique link
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/referrals/dashboard")}
+                style={({ pressed }) => [
+                  styles.dashboardBtn,
+                  pressed && styles.pressed,
+                  Platform.select({
+                    web: { cursor: "pointer", outlineStyle: "none" } as any,
+                    default: {},
+                  }),
+                ]}
+              >
+                <Text style={styles.dashboardBtnText}>Open My Dashboard</Text>
+                <ArrowRight size={15} color="#120e06" strokeWidth={2.5} />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        {/* Top Earners Leaderboard */}
+        <View style={[styles.leaderboardPanel, isDesktop && styles.leaderboardPanelDesktop]}>
+          <View style={styles.leaderboardHeader}>
+            <View style={styles.leaderboardTitleRow}>
+              <Trophy size={20} color={colors.gold} />
+              <View>
+                <Text style={styles.leaderboardTitle}>Top Earners Leaderboard</Text>
+                <Text style={styles.leaderboardSubtitle}>
+                  Top performing community partners this season
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.segment}>
+              <Pressable
+                onPress={() => setPeriod("month")}
+                style={[styles.segmentBtn, period === "month" && styles.segmentBtnActive]}
+              >
+                <Text style={[styles.segmentBtnText, period === "month" && styles.segmentBtnTextActive]}>
+                  This Month
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPeriod("all")}
+                style={[styles.segmentBtn, period === "all" && styles.segmentBtnActive]}
+              >
+                <Text style={[styles.segmentBtnText, period === "all" && styles.segmentBtnTextActive]}>
+                  All Time
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {loading ? (
+            <ActivityIndicator style={{ marginVertical: 32 }} color={colors.gold} />
+          ) : (
+            <View style={[styles.earnersGrid, isDesktop && styles.earnersGridDesktop]}>
+              {displayEarners.slice(0, 3).map((earner, index) => {
+                const isFirst = index === 0;
+                return (
+                  <View
+                    key={`${earner.name}-${index}`}
+                    style={[
+                      styles.earnerCard,
+                      isDesktop && styles.earnerCardDesktop,
+                      isFirst && styles.earnerCardFirst,
+                    ]}
+                  >
+                    <View style={styles.rankBadge}>
+                      <Text style={[styles.rankText, isFirst && styles.rankTextFirst]}>
+                        #{index + 1}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.avatar, isFirst && styles.avatarFirst]}>
+                      {isFirst ? (
+                        <Crown size={20} color={colors.gold} />
+                      ) : (
+                        <UserRound size={18} color={colors.textSecondary} />
+                      )}
+                    </View>
+
+                    <View style={styles.earnerInfo}>
+                      <Text style={styles.earnerName}>{earner.name}</Text>
+                      <Text style={styles.earnerRole}>
+                        {isFirst ? "🏆 Top Ambassador" : "Verified Partner"}
+                      </Text>
+                    </View>
+
+                    <View style={styles.earnerAmountBox}>
+                      <Text style={styles.earnerAmount}>{money(earner.amount)}</Text>
+                      <Text style={styles.earnerAmountSub}>Total Earned</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {/* 3-Step "How It Works" Visual Process */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionBadge}>SIMPLE 3-STEP REWARD FLOW</Text>
+            <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>
+              How It Works
+            </Text>
+          </View>
+
+          <View style={[styles.stepsGrid, isDesktop && styles.stepsGridDesktop]}>
+            <View style={[styles.stepCard, isDesktop && styles.stepCardDesktop]}>
+              <View style={styles.stepNumberBadge}>
+                <Text style={styles.stepNumberText}>01</Text>
+              </View>
+              <View style={styles.stepIconCircle}>
+                <Share2 size={22} color={colors.gold} />
+              </View>
+              <Text style={styles.stepTitle}>Share Your Link</Text>
+              <Text style={styles.stepDesc}>
+                Open your dashboard to copy your personal invite link or QR code and share with friends.
+              </Text>
+            </View>
+
+            <View style={[styles.stepCard, isDesktop && styles.stepCardDesktop]}>
+              <View style={styles.stepNumberBadge}>
+                <Text style={styles.stepNumberText}>02</Text>
+              </View>
+              <View style={styles.stepIconCircle}>
+                <Users size={22} color={colors.gold} />
+              </View>
+              <Text style={styles.stepTitle}>Friend Books a Stay</Text>
+              <Text style={styles.stepDesc}>
+                Your friend explores and completes a booking for a villa, cottage, or resort on BookStayX.
+              </Text>
+            </View>
+
+            <View style={[styles.stepCard, isDesktop && styles.stepCardDesktop]}>
+              <View style={styles.stepNumberBadge}>
+                <Text style={styles.stepNumberText}>03</Text>
+              </View>
+              <View style={styles.stepIconCircle}>
+                <Coins size={22} color={colors.gold} />
+              </View>
+              <Text style={styles.stepTitle}>Receive Cash Rewards</Text>
+              <Text style={styles.stepDesc}>
+                Get real cash credited to your wallet with instant withdrawal straight to your UPI ID.
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Benefits Grid on Widescreen */}
+        <View style={[styles.benefitsGrid, isDesktop && styles.benefitsGridDesktop]}>
+          <View style={[styles.benefitCard, isDesktop && styles.benefitCardDesktop]}>
+            <Zap size={20} color={colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.benefitTitle}>Unlimited Earning Potential</Text>
+              <Text style={styles.benefitDesc}>
+                No caps or limits on how many guests you can refer. The more you share, the more you earn.
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.benefitCard, isDesktop && styles.benefitCardDesktop]}>
+            <ShieldCheck size={20} color={colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.benefitTitle}>Direct UPI Transfers</Text>
+              <Text style={styles.benefitDesc}>
+                Hassle-free automated payouts directly to Google Pay, PhonePe, or any valid UPI ID.
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.benefitCard, isDesktop && styles.benefitCardDesktop]}>
+            <TrendingUp size={20} color={colors.gold} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.benefitTitle}>Transparent Real-Time Tracking</Text>
+              <Text style={styles.benefitDesc}>
+                Monitor clicks, confirmed bookings, and payout status live from your personal portal.
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Bottom Call to Action Card */}
+        <View style={[styles.bottomCta, isDesktop && styles.bottomCtaDesktop]}>
+          <View style={styles.bottomCtaLeft}>
+            <View style={styles.bottomCtaBadge}>
+              <Gift size={14} color={colors.gold} />
+              <Text style={styles.bottomCtaBadgeText}>START EARNING TODAY</Text>
+            </View>
+            <Text style={[styles.bottomCtaTitle, isDesktop && styles.bottomCtaTitleDesktop]}>
+              Ready to invite your network?
+            </Text>
+            <Text style={styles.bottomCtaDesc}>
+              Access your personalized referral link, QR code, and live earnings dashboard in seconds.
+            </Text>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/referrals/dashboard")}
+            style={({ pressed }) => [
+              styles.startInvitingBtn,
+              pressed && styles.pressed,
+              Platform.select({
+                web: { cursor: "pointer", outlineStyle: "none" } as any,
+                default: {},
+              }),
+            ]}
+          >
+            <Text style={styles.startInvitingBtnText}>Open Referral Portal</Text>
+            <ArrowRight size={16} color="#120e06" strokeWidth={2.5} />
+          </Pressable>
+        </View>
+
+      </View>
+    </ScrollView>
+  );
+}
+
+// Redirect or alias for legacy references
+export const ReferralGenerateScreen = ReferralHomeScreen;
+
+const styles = StyleSheet.create({
+  pressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  scroll: {
+    flexGrow: 1,
+    alignItems: "center",
+    backgroundColor: colors.background,
+    paddingTop: 72,
+    paddingBottom: layout.bottomChromeReserve + 20,
+  },
+  scrollDesktop: {
+    paddingTop: 88,
+    paddingBottom: layout.desktopBottomReserve + 24,
+  },
+  container: {
+    width: "100%",
+    paddingHorizontal: 20,
+    gap: 24,
+  },
+  containerDesktop: {
+    maxWidth: 1320,
+    paddingHorizontal: 36,
+    gap: 32,
+  },
+
+  // Hero Banner
+  heroBanner: {
+    backgroundColor: "rgba(14, 18, 24, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.22)",
+    padding: 22,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 8px 30px rgba(0, 0, 0, 0.4)",
+      } as any,
+      default: {},
+    }),
+  },
+  heroBannerDesktop: {
+    padding: 34,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    marginBottom: 10,
+  },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(224, 184, 74, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.3)",
+  },
+  badgeText: {
+    color: colors.gold,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.1,
+  },
+  heroRow: {
+    gap: 20,
+  },
+  heroRowDesktop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 36,
+  },
+  heroLeft: {
+    flex: 1,
+  },
+  heroTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.displayMedium,
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  heroTitleDesktop: {
+    fontSize: 38,
+    lineHeight: 46,
+  },
+  goldText: {
+    color: colors.gold,
+  },
+  heroSubtitle: {
+    marginTop: 8,
+    color: colors.textSecondary,
+    fontFamily: fontFamilies.sans,
+    fontSize: 13.5,
+    lineHeight: 21,
+    maxWidth: 680,
+  },
+  heroSubtitleDesktop: {
+    fontSize: 14.5,
+    lineHeight: 23,
+  },
+  heroActionCard: {
+    backgroundColor: "rgba(22, 28, 36, 0.8)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.25)",
+    padding: 18,
+    gap: 14,
+  },
+  heroActionCardDesktop: {
+    width: 360,
+  },
+  heroActionTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  walletIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(224, 184, 74, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionCardTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 15,
+  },
+  actionCardSubtitle: {
+    marginTop: 2,
+    color: colors.textMuted,
+    fontFamily: fontFamilies.sans,
+    fontSize: 11.5,
+  },
+  dashboardBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.gold,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  dashboardBtnText: {
+    color: "#120e06",
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 13,
+  },
+
+  // Steps Section
+  section: {
+    gap: 16,
+  },
+  sectionHeader: {
+    gap: 4,
+  },
+  sectionBadge: {
+    color: colors.gold,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 10,
+    letterSpacing: 1.2,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.displayMedium,
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  sectionTitleDesktop: {
+    fontSize: 26,
+    lineHeight: 32,
+  },
+  stepsGrid: {
+    gap: 14,
+  },
+  stepsGridDesktop: {
+    flexDirection: "row",
+    gap: 18,
+  },
+  stepCard: {
+    flex: 1,
+    backgroundColor: "rgba(14, 18, 24, 0.9)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    padding: 20,
+    position: "relative",
+    ...Platform.select({
+      web: {
+        boxShadow: "0 4px 18px rgba(0, 0, 0, 0.25)",
+      } as any,
+      default: {},
+    }),
+  },
+  stepCardDesktop: {
+    padding: 24,
+  },
+  stepNumberBadge: {
+    position: "absolute",
+    right: 16,
+    top: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(224, 184, 74, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.25)",
+  },
+  stepNumberText: {
+    color: colors.gold,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 11,
+  },
+  stepIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(224, 184, 74, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  stepTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  stepDesc: {
+    marginTop: 6,
+    color: colors.textSecondary,
+    fontFamily: fontFamilies.sans,
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+
+  // Benefits Grid
+  benefitsGrid: {
+    gap: 12,
+  },
+  benefitsGridDesktop: {
+    flexDirection: "row",
+    gap: 16,
+  },
+  benefitCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+    backgroundColor: "rgba(18, 22, 28, 0.65)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    padding: 16,
+  },
+  benefitCardDesktop: {
+    padding: 18,
+  },
+  benefitTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.sansSemiBold,
+    fontSize: 13.5,
+  },
+  benefitDesc: {
+    marginTop: 3,
+    color: colors.textMuted,
+    fontFamily: fontFamilies.sans,
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+
+  // Leaderboard Panel
+  leaderboardPanel: {
+    backgroundColor: "rgba(14, 18, 24, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.2)",
+    padding: 20,
+    gap: 16,
+  },
+  leaderboardPanelDesktop: {
+    padding: 28,
+  },
+  leaderboardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 12,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+  leaderboardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  leaderboardTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.displayMedium,
+    fontSize: 18,
+  },
+  leaderboardSubtitle: {
+    marginTop: 2,
+    color: colors.textMuted,
+    fontFamily: fontFamilies.sans,
+    fontSize: 11.5,
+  },
+  segment: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    padding: 3,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  segmentBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+  },
+  segmentBtnActive: {
+    backgroundColor: "rgba(224, 184, 74, 0.15)",
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  segmentBtnText: {
+    color: colors.textMuted,
+    fontFamily: fontFamilies.sansMedium,
+    fontSize: 11,
+  },
+  segmentBtnTextActive: {
+    color: colors.gold,
+    fontFamily: fontFamilies.sansBold,
+  },
+  earnersGrid: {
+    gap: 10,
+  },
+  earnersGridDesktop: {
+    flexDirection: "row",
+    gap: 14,
+  },
+  earnerCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "rgba(22, 28, 36, 0.7)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    padding: 14,
+  },
+  earnerCardDesktop: {
+    padding: 18,
+  },
+  earnerCardFirst: {
+    borderColor: "rgba(224, 184, 74, 0.35)",
+    backgroundColor: "rgba(224, 184, 74, 0.06)",
+  },
+  rankBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rankText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 11,
+  },
+  rankTextFirst: {
+    color: colors.gold,
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarFirst: {
+    backgroundColor: "rgba(224, 184, 74, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.4)",
+  },
+  earnerInfo: {
+    flex: 1,
+  },
+  earnerName: {
+    color: colors.text,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 14,
+  },
+  earnerRole: {
+    marginTop: 2,
+    color: colors.textMuted,
+    fontFamily: fontFamilies.sans,
+    fontSize: 10.5,
+  },
+  earnerAmountBox: {
+    alignItems: "flex-end",
+  },
+  earnerAmount: {
+    color: colors.gold,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 15,
+  },
+  earnerAmountSub: {
+    marginTop: 1,
+    color: colors.textMuted,
+    fontFamily: fontFamilies.sans,
+    fontSize: 9.5,
+  },
+
+  // Bottom CTA
+  bottomCta: {
+    backgroundColor: "rgba(18, 22, 28, 0.95)",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.3)",
+    padding: 24,
+    gap: 18,
+  },
+  bottomCtaDesktop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 32,
+  },
+  bottomCtaLeft: {
+    flex: 1,
+    maxWidth: 720,
+  },
+  bottomCtaBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 6,
+  },
+  bottomCtaBadgeText: {
+    color: colors.gold,
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 9.5,
+    letterSpacing: 1.1,
+  },
+  bottomCtaTitle: {
+    color: colors.text,
+    fontFamily: fontFamilies.displayMedium,
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  bottomCtaTitleDesktop: {
+    fontSize: 26,
+    lineHeight: 32,
+  },
+  bottomCtaDesc: {
+    marginTop: 6,
+    color: colors.textSecondary,
+    fontFamily: fontFamilies.sans,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  startInvitingBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.gold,
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    borderRadius: radii.pill,
+    alignSelf: "flex-start",
+  },
+  startInvitingBtnText: {
+    color: "#120e06",
+    fontFamily: fontFamilies.sansBold,
+    fontSize: 13.5,
+  },
+});

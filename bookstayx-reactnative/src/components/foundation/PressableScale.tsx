@@ -3,6 +3,7 @@ import {
   Animated,
   Platform,
   Pressable,
+  StyleSheet,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
@@ -37,7 +38,7 @@ export function PressableScale({
   };
 
   return (
-    <Animated.View style={[style, { transform: [{ scale }] }, disabled && { opacity: 0.5 }]}>
+    <Animated.View style={[{ transform: [{ scale }] }, disabled && { opacity: 0.5 }]}>
       <Pressable
         {...props}
         disabled={disabled}
@@ -49,7 +50,7 @@ export function PressableScale({
           animate(1);
           onPressOut?.(event);
         }}
-        style={styles.fill}
+        style={style}
       >
         {children}
       </Pressable>
@@ -57,4 +58,4 @@ export function PressableScale({
   );
 }
 
-const styles = { fill: { flex: 1 } } as const;
+const styles = StyleSheet.create({});

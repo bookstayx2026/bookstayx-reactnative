@@ -1,43 +1,29 @@
-import { Platform, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { usePathname, useRouter, type Href } from "expo-router";
-import { IndianRupee } from "lucide-react-native";
-import Svg, { Path } from "react-native-svg";
+import { CalendarDays, Heart, Home, Hotel, IndianRupee, MapPin, User } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PressableScale } from "@/components/foundation";
-import { colors, fontFamilies, layout, radii } from "@/theme";
-import { customerNavItems, isCustomerRouteActive, type CustomerNavItem } from "./customer-navigation";
+import { colors, fontFamilies } from "@/theme";
+import { isCustomerRouteActive, type CustomerNavItem } from "./customer-navigation";
+import { useAuth } from "@/components/auth";
+import { useIsMobile } from "@/hooks/use-window-class";
 
-const shellFill = "rgba(11, 14, 18, 0.96)";
-const shellStroke = "rgba(224, 184, 74, 0.42)";
+const mobileBottomNavItems: CustomerNavItem[] = [
+  { href: "/", label: "Home", shortLabel: "Home", icon: Home, exact: true },
+  { href: "/locations", label: "Locations", shortLabel: "Places", icon: MapPin },
+  { href: "/properties", label: "Properties", shortLabel: "Stays", icon: Hotel },
+  { href: "/referrals", label: "Referral", shortLabel: "Referral", icon: IndianRupee },
+  { href: "/bookings", label: "Bookings", shortLabel: "Bookings", icon: CalendarDays },
+  { href: "/saved", label: "Saved", shortLabel: "Saved", icon: Heart },
+  { href: "/profile", label: "Profile", shortLabel: "Profile", icon: User },
+];
 
-function BottomShell() {
-  return (
-    <View style={[StyleSheet.absoluteFill, styles.noPointerEvents]}>
-      <View style={[styles.shellSide, styles.shellLeft]} />
-      <View style={[styles.shellSide, styles.shellRight]} />
-      <Svg width={120} height={70} viewBox="0 0 120 70" style={styles.shellCenter}>
-        <Path
-          d="M0 14 L12 14 C24 14 30 14 38 9 C46 4 52 2 60 2 C68 2 74 4 82 9 C90 14 96 14 108 14 L120 14 L120 70 L0 70 Z"
-          fill={shellFill}
-        />
-        <Path
-          d="M0 14 L12 14 C24 14 30 14 38 9 C46 4 52 2 60 2 C68 2 74 4 82 9 C90 14 96 14 108 14 L120 14"
-          fill="none"
-          stroke={shellStroke}
-          strokeWidth={1.2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <Path d="M0 69.4 H120" stroke={shellStroke} strokeWidth={1.2} />
-      </Svg>
-    </View>
-  );
-}
-
-function NavItem({ item, compact }: { item: CustomerNavItem; compact: boolean }) {
+function NavItem({ item }: { item: CustomerNavItem }) {
   const router = useRouter();
   const pathname = usePathname();
-  const active = isCustomerRouteActive(pathname, item);
+  const { session } = useAuth();
+  const profileLogin = item.href === "/profile" && pathname === "/login";
+  const active = profileLogin || isCustomerRouteActive(pathname, item);
   const Icon = item.icon;
   const referral = item.href === "/referrals";
 
@@ -46,26 +32,33 @@ function NavItem({ item, compact }: { item: CustomerNavItem; compact: boolean })
       accessibilityLabel={item.label}
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
-      onPress={() => router.push(item.href as Href)}
+      onPress={() => {
+        const href = item.href === "/profile" && !session ? "/login" : item.href;
+        router.push(href as Href);
+      }}
       style={styles.navItem}
     >
       <View style={[styles.navContent, referral && styles.referralContent]}>
         {referral ? (
           <View style={[styles.referralOrb, active && styles.referralOrbActive]}>
-            <IndianRupee color={colors.success} size={18} strokeWidth={2.2} />
+            <IndianRupee color={colors.success} size={15} strokeWidth={2.4} />
           </View>
         ) : (
-          <Icon color={active ? colors.gold : colors.textMuted} size={18} strokeWidth={1.55} />
+          <Icon
+            color={active ? colors.gold : "rgba(255, 255, 255, 0.45)"}
+            size={16}
+            strokeWidth={active ? 2 : 1.6}
+          />
         )}
         <Text
           numberOfLines={1}
-          maxFontSizeMultiplier={1.15}
           style={[
             styles.navLabel,
-            { color: referral ? colors.success : active ? colors.gold : colors.textMuted },
+            { color: referral ? colors.success : active ? colors.gold : "rgba(255, 255, 255, 0.5)" },
+            active && styles.navLabelActive,
           ]}
         >
-          {compact ? item.shortLabel : item.label}
+          {item.shortLabel}
         </Text>
       </View>
     </PressableScale>
@@ -74,16 +67,19 @@ function NavItem({ item, compact }: { item: CustomerNavItem; compact: boolean })
 
 export function CustomerBottomNav() {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const compact = width < 390;
+  const isMobile = useIsMobile();
+
+  // Hidden on Tablet (tab view) and Desktop screens
+  if (!isMobile) {
+    return null;
+  }
 
   return (
-    <View style={[styles.fixed, { paddingBottom: Math.max(10, insets.bottom) }]}>
+    <View style={[styles.fixed, { paddingBottom: Math.max(6, insets.bottom) }]}>
       <View style={styles.bar}>
-        <BottomShell />
         <View accessibilityRole="tablist" style={styles.items}>
-          {customerNavItems.map((item) => (
-            <NavItem key={item.href} item={item} compact={compact} />
+          {mobileBottomNavItems.map((item) => (
+            <NavItem key={item.href} item={item} />
           ))}
         </View>
       </View>
@@ -94,79 +90,87 @@ export function CustomerBottomNav() {
 const styles = StyleSheet.create({
   fixed: {
     position: "absolute",
-    zIndex: 35,
+    zIndex: 100,
     left: 0,
     right: 0,
     bottom: 0,
     alignItems: "center",
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     pointerEvents: "box-none",
   },
   bar: {
     width: "100%",
-    maxWidth: layout.sourceMaxWidth,
-    height: 70,
+    maxWidth: 440,
+    height: 58,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: "rgba(224, 184, 74, 0.22)",
+    backgroundColor: "rgba(10, 14, 20, 0.98)",
+    justifyContent: "center",
     ...Platform.select({
-      web: { boxShadow: "0 -8px 28px rgba(0, 0, 0, 0.5)" },
+      web: {
+        boxShadow: "0 -4px 28px rgba(0, 0, 0, 0.85)",
+        backdropFilter: "blur(20px)",
+      } as any,
       ios: {
         shadowColor: "#000000",
-        shadowOffset: { width: 0, height: -8 },
-        shadowOpacity: 0.48,
-        shadowRadius: 28,
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.6,
+        shadowRadius: 20,
       },
-      default: { elevation: 16 },
+      default: { elevation: 20 },
     }),
   },
-  shellSide: {
-    position: "absolute",
-    top: 14,
-    bottom: 0,
-    backgroundColor: shellFill,
-    borderColor: shellStroke,
-    borderWidth: StyleSheet.hairlineWidth,
+  items: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
   },
-  shellLeft: {
-    left: 0,
-    right: "50%",
-    marginRight: 48,
-    borderRightWidth: 0,
-    borderTopLeftRadius: 28,
-    borderBottomLeftRadius: 28,
+  navItem: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  shellRight: {
-    right: 0,
-    left: "50%",
-    marginLeft: 48,
-    borderLeftWidth: 0,
-    borderTopRightRadius: 28,
-    borderBottomRightRadius: 28,
+  navContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
   },
-  shellCenter: { position: "absolute", left: "50%", bottom: 0, marginLeft: -60 },
-  items: { zIndex: 1, flex: 1, flexDirection: "row", paddingHorizontal: 4, paddingTop: 14, paddingBottom: 10 },
-  navItem: { flex: 1, minWidth: 0, height: "100%" },
-  navContent: { flex: 1, alignItems: "center", justifyContent: "flex-end", gap: 3 },
-  referralContent: { justifyContent: "flex-end" },
+  referralContent: {
+    justifyContent: "center",
+  },
   referralOrb: {
-    width: 38,
-    height: 38,
-    marginTop: -11,
-    borderRadius: radii.pill,
+    width: 34,
+    height: 34,
+    marginTop: -10,
+    borderRadius: 17,
     borderWidth: 1.5,
     borderColor: colors.success,
-    backgroundColor: "#0A0D10",
+    backgroundColor: "#061B12",
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({
-      web: { boxShadow: "0 0 14px rgba(61, 255, 138, 0.42)" },
-      ios: { shadowColor: colors.success, shadowOpacity: 0.42, shadowRadius: 14 },
-      default: { elevation: 10 },
+      web: { boxShadow: "0 0 14px rgba(61, 255, 138, 0.55)" },
+      ios: { shadowColor: colors.success, shadowOpacity: 0.55, shadowRadius: 14 },
+      default: { elevation: 12 },
     }),
   },
   referralOrbActive: Platform.select({
-    web: { boxShadow: "0 0 20px rgba(61, 255, 138, 0.7)" },
-    ios: { shadowOpacity: 0.7, shadowRadius: 20 },
-    default: { elevation: 12 },
+    web: { boxShadow: "0 0 20px rgba(61, 255, 138, 0.85)" },
+    ios: { shadowOpacity: 0.85, shadowRadius: 20 },
+    default: { elevation: 14 },
   }),
-  navLabel: { maxWidth: "100%", fontFamily: fontFamilies.sansMedium, fontSize: 8.5, lineHeight: 10 },
-  noPointerEvents: { pointerEvents: "none" },
+  navLabel: {
+    maxWidth: "100%",
+    fontFamily: fontFamilies.sansSemiBold,
+    fontSize: 8.5,
+    lineHeight: 10,
+    textAlign: "center",
+  },
+  navLabelActive: {
+    fontFamily: fontFamilies.sansBold,
+  },
 });

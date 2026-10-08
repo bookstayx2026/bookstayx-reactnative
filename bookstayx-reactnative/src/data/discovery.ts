@@ -1,7 +1,33 @@
+import type { PropertyCategoryKey } from "@/config/property-categories";
+
 export type Location = { slug: string; name: string; district: string; region: string; category: string; image: number; tagline: string; rating: number; reviews: string };
-export type PropertyCategory = "villas" | "camping" | "hotel" | "campings";
+export type PropertyCategory = PropertyCategoryKey;
 export type PropertyTier = "affordable" | "premium" | "luxury";
-export type Property = { id: string; name: string; image: number | string; meta: string[]; priceAmount: number; locationSlug: string; locationLabel: string; tab: "top" | "recommended"; category: PropertyCategory; badge: string; rating: number; reviews: number; tier: PropertyTier };
+export type PropertyUnit = {
+  id: number;
+  name: string;
+  availablePersons: number;
+  totalPersons: number;
+  totalInventory?: number;
+  availableInventory?: number;
+  accommodationType?: string;
+  weekdayPrice: number;
+  weekendPrice: number;
+  specialPrice?: number;
+  description?: string;
+  images: (number | string)[];
+  hasFood?: boolean;
+  mealPlan?: string;
+  vegPrice?: number;
+  nonVegPrice?: number;
+  kitchenFacility?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  bedConfig?: string;
+  extraGuestPrice?: number;
+  securityDeposit?: number;
+};
+export type Property = { id: string; name: string; image: number | string; meta: string[]; priceAmount: number; locationSlug: string; locationLabel: string; tab: "top" | "recommended"; category: PropertyCategory; badge: string; rating: number; reviews: number; tier: PropertyTier; description?: string; amenities?: string[]; activities?: string[]; highlights?: string[]; policies?: string[]; schedule?: string[]; gallery?: (number | string)[]; units?: PropertyUnit[]; maxCapacity?: number; checkInTime?: string; checkOutTime?: string; isAvailable?: boolean; hasFood?: boolean };
 
 export const images = {
   hero: require("../../assets/images/discovery/hero.jpg"), lake: require("../../assets/images/discovery/lake.jpg"), hills: require("../../assets/images/discovery/hills.jpg"),
@@ -21,25 +47,50 @@ export const locations: Location[] = [
 ];
 
 export const getLocation = (slug: string) => locations.find((item) => item.slug === slug);
-export const popularLocations = ["pawna-lake", "lonavala", "alibagh", "kashid", "murud", "diveagar"].map((slug) => getLocation(slug)!);
-export const locationGroups = [
-  { title: "Pune District (Maval Region)", slugs: ["lonavala", "pawna-lake", "khandala"] }, { title: "Karjat District", slugs: ["karjat"] },
-  { title: "Raigad District (Popular Weekend Hubs)", slugs: ["kihim-beach", "alibagh", "varsoli-beach", "nagaon-beach", "akshi-beach", "kashid", "murud", "diveagar", "shrivardhan-beach", "harihareshwar-beach"] },
-  { title: "Ratnagiri District (Central Konkan)", slugs: ["velas-beach", "kelshi-beach", "anjarle-beach", "karde-ladghar", "harnai-beach", "guhagar-beach", "ganpatipule-beach"] },
-  { title: "Sindhudurg District (Southern Konkan)", slugs: ["devgad-beach", "kunkeshwar-beach", "tarkarli", "chivla-beach", "bhogwe-beach", "nivati-beach", "vengurla", "redi-beach"] },
+export const popularLocations = ["pawna-lake", "lonavala", "alibagh", "kashid", "murud", "diveagar", "karjat", "tarkarli"].map((slug) => getLocation(slug)!);
+export type LocationGroup = { title: string; subtitle?: string; districtKey: string; slugs: string[] };
+
+export const locationGroups: LocationGroup[] = [
+  {
+    title: "Pune District (Maval & Lakeside Hubs)",
+    subtitle: "Tranquil lakes, misty valleys & private hillside sanctuaries",
+    districtKey: "Pune District",
+    slugs: ["lonavala", "pawna-lake", "khandala"],
+  },
+  {
+    title: "Raigad District (Coastal & Weekend Getaways)",
+    subtitle: "Sun-kissed beaches, historic forts & serene nature escapes",
+    districtKey: "Raigad District",
+    slugs: ["karjat", "kihim-beach", "alibagh", "varsoli-beach", "nagaon-beach", "akshi-beach", "kashid", "murud", "diveagar", "shrivardhan-beach", "harihareshwar-beach"],
+  },
+  {
+    title: "Ratnagiri District (Central Konkan Charm)",
+    subtitle: "Untouched golden shorelines, heritage temples & secluded coastal havens",
+    districtKey: "Ratnagiri District",
+    slugs: ["velas-beach", "kelshi-beach", "anjarle-beach", "karde-ladghar", "harnai-beach", "guhagar-beach", "ganpatipule-beach"],
+  },
+  {
+    title: "Sindhudurg District (Southern Konkan Jewels)",
+    subtitle: "Crystal clear waters, pristine coral shores & backwater serenity",
+    districtKey: "Sindhudurg District",
+    slugs: ["devgad-beach", "kunkeshwar-beach", "tarkarli", "chivla-beach", "bhogwe-beach", "nivati-beach", "vengurla", "redi-beach"],
+  },
 ];
 
 export const properties: Property[] = [
-  ["pawna-lakeview-villa","Pawna Lakeview Villa",images.villa1,["4 Bedrooms","Lake View","Pool"],6999,"pawna-lake","Pawna Lake, Lonavala","top","villas","VILLA",4.8,124,"affordable"],
-  ["pawna-lakeside-domes","Lakeside Domes",images.hero,["2 Domes","Lake View","Bonfire"],4999,"pawna-lake","Pawna Lake, Lonavala","recommended","camping","CAMPING & COTTAGES",4.9,86,"affordable"],
-  ["valley-view-cottage","Valley View Cottage",images.valley,["2 Bedrooms","Mountain View"],5499,"lonavala","Lonavala Hills","recommended","camping","CAMPING & COTTAGES",4.7,62,"affordable"],
-  ["private-pool-villa","Private Pool Villa",images.villa2,["5 Bedrooms","Private Pool","BBQ"],12999,"lonavala","Lonavala","top","villas","VILLA",4.9,201,"affordable"],
-  ["seaside-serenity-villa","Seaside Serenity Villa",images.beach1,["4 Guests","2 Bedrooms","Pool"],15000,"alibagh","Alibagh Coast","top","villas","VILLA",4.8,98,"luxury"],
-  ["kashid-beach-cottage","Kashid Beach Cottage",images.beach2,["2-6 Guests","Sea View"],8500,"kashid","Kashid Beach","recommended","camping","CAMPING & COTTAGES",4.6,54,"premium"],
-  ["diveagar-palm-retreat","Diveagar Palm Retreat",images.beach3,["6 Guests","3 Bedrooms","Beach Access"],11000,"diveagar","Diveagar Beach","top","hotel","HOTEL ROOMS",4.7,73,"premium"],
-  ["pawna-riverside-camp","Riverside Camp Stays",images.lake,["Shared Camp","Bonfire","Lake View"],3499,"pawna-lake","Pawna Lake, Lonavala","recommended","campings","CAMPINGS",4.5,41,"affordable"],
-  ["lonavala-cliffside-suite","Cliffside Suite Hotel",images.hills,["King Bed","Mountain View","Breakfast"],9499,"lonavala","Lonavala Hills","recommended","hotel","HOTEL ROOMS",4.6,112,"premium"],
-  ["murud-fort-villa","Fort View Heritage Villa",images.fort,["3 Bedrooms","Sea View","Pool"],14500,"murud","Murud, Raigad","top","villas","VILLA",4.8,67,"luxury"],
+  ["pawna-lakeview-villa","Pawna Lakeview Villa",images.villa1,["4 Bedrooms","Lake View","Pool"],6999,"pawna-lake","Pawna Lake, Lonavala","top","villa","VILLA",4.8,124,"affordable"],
+  ["pawna-lakeside-domes","Lakeside Domes",images.hero,["2 Domes","Lake View","Bonfire"],4999,"pawna-lake","Pawna Lake, Lonavala","recommended","camping_cottages","CAMPING & COTTAGES",4.9,86,"affordable"],
+  ["valley-view-cottage","Valley View Cottage",images.valley,["2 Bedrooms","Mountain View"],5499,"lonavala","Lonavala Hills","recommended","camping_cottages","CAMPING & COTTAGES",4.7,62,"affordable"],
+  ["private-pool-villa","Private Pool Villa",images.villa2,["5 Bedrooms","Private Pool","BBQ"],12999,"lonavala","Lonavala","top","villa","VILLA",4.9,201,"affordable"],
+  ["seaside-serenity-villa","Seaside Serenity Villa",images.beach1,["4 Guests","2 Bedrooms","Pool"],15000,"alibagh","Alibagh Coast","top","villa","VILLA",4.8,98,"luxury"],
+  ["kashid-beach-cottage","Kashid Beach Cottage",images.beach2,["2-6 Guests","Sea View"],8500,"kashid","Kashid Beach","recommended","camping_cottages","CAMPING & COTTAGES",4.6,54,"premium"],
+  ["diveagar-palm-retreat","Diveagar Palm Retreat",images.beach3,["6 Guests","3 Bedrooms","Beach Access"],11000,"diveagar","Diveagar Beach","top","resort","RESORT",4.7,73,"premium"],
+  ["pawna-riverside-camp","Riverside Camp Stays",images.lake,["Shared Camp","Bonfire","Lake View"],3499,"pawna-lake","Pawna Lake, Lonavala","recommended","camping_cottages","CAMPING & COTTAGES",4.5,41,"affordable"],
+  ["lonavala-cliffside-suite","Cliffside Suite Hotel",images.hills,["King Bed","Mountain View","Breakfast"],9499,"lonavala","Lonavala Hills","recommended","resort","RESORT",4.6,112,"premium"],
+  ["murud-fort-villa","Fort View Heritage Villa",images.fort,["3 Bedrooms","Sea View","Pool"],14500,"murud","Murud, Raigad","top","villa","VILLA",4.8,67,"luxury"],
+  ["pawna-lake-camping-cottages","Pawna Lake Camping & Cottages",images.lake,["Lakeside Tents & Cottages","Lake View Sunsets","Live Barbecue & Music"],2500,"pawna-lake","Pawna Lake, Lonavala","recommended","camping_cottages","CAMPING & COTTAGES",4.8,95,"affordable"],
+  ["emerald-valley-resort","Emerald Valley Resort",images.hills,["Infinity Pool Overlooking Valley","Multi-Cuisine Fine Dining","Private Balconies In All Rooms"],6000,"lonavala","Lonavala Hills","top","resort","RESORT",4.9,150,"premium"],
+  ["hillview-homestay","Hillview Homestay",images.valley,["Scenic Garden & Mountain Facing","Authentic Home-Cooked Konkani Food","Peaceful Hillside Neighborhood"],3500,"khandala","Khandala Hills","recommended","homestay","HOMESTAY",4.8,78,"affordable"],
 ].map((p) => { const [id,name,image,meta,priceAmount,locationSlug,locationLabel,tab,category,badge,rating,reviews,tier]=p as [string,string,number,string[],number,string,string,Property["tab"],PropertyCategory,string,number,number,PropertyTier]; return {id,name,image,meta,priceAmount,locationSlug,locationLabel,tab,category,badge,rating,reviews,tier}; });
 
 export const getProperty = (id: string) => properties.find((item) => item.id === id);

@@ -86,12 +86,15 @@ export const motion = {
 
 export const layout = {
   sourceMaxWidth: 480,
-  expandedContentMaxWidth: 960,
+  tabletContentMaxWidth: 920,
+  expandedContentMaxWidth: 1520,
+  headerMaxWidth: 1640,
   screenInset: 20,
   bottomChromeReserve: 108,
+  desktopBottomReserve: 36,
   minimumTouchTarget: Platform.select({ ios: 44, default: 48 }),
-  compactMaxWidth: 599,
-  mediumMaxWidth: 839,
+  compactMaxWidth: 639,
+  mediumMaxWidth: 1023,
 } as const;
 
 export const shadows = {

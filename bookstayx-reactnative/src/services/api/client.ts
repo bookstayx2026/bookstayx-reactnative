@@ -16,21 +16,26 @@ export class ApiError extends Error {
 
 type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown; timeoutMs?: number };
 
+export function apiUrl(path: string) {
+  if (!apiConfig.baseUrl) throw new ApiError("The BookStayX API is not configured.", "NOT_CONFIGURED");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const baseHasApiPrefix = /\/api$/i.test(apiConfig.baseUrl);
+  const pathHasApiPrefix = /^\/api(?:\/|$)/i.test(normalizedPath);
+  const requestPath = baseHasApiPrefix && pathHasApiPrefix
+    ? normalizedPath.replace(/^\/api/i, "")
+    : !baseHasApiPrefix && !pathHasApiPrefix
+      ? `/api${normalizedPath}`
+      : normalizedPath;
+  return `${apiConfig.baseUrl}${requestPath}`;
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (!apiConfig.baseUrl) throw new ApiError("The BookStayX API is not configured.", "NOT_CONFIGURED");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? apiConfig.timeoutMs);
   try {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const baseHasApiPrefix = /\/api$/i.test(apiConfig.baseUrl);
-    const pathHasApiPrefix = /^\/api(?:\/|$)/i.test(normalizedPath);
-    const requestPath = baseHasApiPrefix && pathHasApiPrefix
-      ? normalizedPath.replace(/^\/api/i, "")
-      : !baseHasApiPrefix && !pathHasApiPrefix
-        ? `/api${normalizedPath}`
-        : normalizedPath;
-    const response = await fetch(`${apiConfig.baseUrl}${requestPath}`, {
+    const response = await fetch(apiUrl(path), {
       ...options,
       signal: controller.signal,
       headers: { Accept: "application/json", "Content-Type": "application/json", ...options.headers },
@@ -41,7 +46,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     try { data = raw ? JSON.parse(raw) : null; } catch { throw new ApiError("The server returned an unreadable response.", "INVALID_RESPONSE", response.status, raw); }
     if (!response.ok) {
       const record = data && typeof data === "object" ? data as Record<string, unknown> : null;
-      const message = String(record?.message || record?.error || `Request failed with status ${response.status}.`);
+      let message = `Request failed with status ${response.status}.`;
+      if (typeof record?.message === "string") {
+        message = record.message;
+      } else if (typeof record?.error === "string") {
+        message = record.error;
+      } else if (record?.error && typeof record.error === "object") {
+        const errObj = record.error as Record<string, unknown>;
+        message = String(errObj.message || errObj.code || message);
+      }
       throw new ApiError(message, "HTTP", response.status, data);
     }
     return data as T;

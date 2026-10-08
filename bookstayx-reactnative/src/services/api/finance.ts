@@ -1,0 +1,13 @@
+import { apiRequest } from "./client";
+const bearer=(token:string)=>({Authorization:`Bearer ${token}`});
+export type FinanceRecord={id:string;booking_id?:string;_type?:string;customer_name?:string;property_name?:string;amount:number|string;status:string;payment_status?:string;date:string;payment_method?:string;transaction_id?:string;refund_status?:string;upi_id?:string};
+export type WithdrawalRequest={id:number;amount:number|string;status:string;created_at:string;upi_id:string;beneficiary_name?:string;username:string;referral_otp_number:string;referral_code:string;referral_type:string};
+export type RefundRequest={booking_id:string;guest_name:string;property_name:string;advance_amount:number|string;refund_amount?:number|string;booking_status:string;refund_status?:string};
+export const getAdminTransactions=(token:string)=>apiRequest<{success:true;bookings:FinanceRecord[];refunds:FinanceRecord[];withdrawals:FinanceRecord[];cancelled:FinanceRecord[]}>("/payments/transactions",{headers:bearer(token)});
+export const getAdminFinancialRequests=async(token:string)=>{const[withdrawals,refunds]=await Promise.all([apiRequest<{success:true;withdrawal_requests:WithdrawalRequest[]}>("/payments/withdrawal/requests",{headers:bearer(token)}),apiRequest<{success:true;refund_requests:RefundRequest[]}>("/payments/refund/requests",{headers:bearer(token)})]);return{withdrawals:withdrawals.withdrawal_requests,refunds:refunds.refund_requests}};
+export const processAdminWithdrawal=(token:string,transactionId:number)=>apiRequest<{success:true;message:string}>("/payments/withdrawal/process",{method:"POST",headers:bearer(token),body:{transaction_id:transactionId}});
+export const rejectAdminWithdrawal=(token:string,transactionId:number)=>apiRequest<{success:true}>("/payments/withdrawal/reject",{method:"POST",headers:bearer(token),body:{transaction_id:transactionId}});
+export const processAdminRefund=(token:string,bookingId:string,amount?:number)=>apiRequest<{success:true;status:string}>("/payments/refund/initiate",{method:"POST",headers:bearer(token),body:{booking_id:bookingId,amount}});
+export const denyAdminRefund=(token:string,bookingId:string)=>apiRequest<{success:true}>("/payments/refund/deny",{method:"POST",headers:bearer(token),body:{booking_id:bookingId}});
+export type RevenueSummary={success:true;grossRevenue:number;refundPending:number;referralPayable:number;inProcessReferral:number;withdrawPending:number};
+export const getRevenueSummary=(token:string,month:number,year:number)=>apiRequest<RevenueSummary>(`/payments/revenue-summary?month=${month}&year=${year}`,{headers:bearer(token)});

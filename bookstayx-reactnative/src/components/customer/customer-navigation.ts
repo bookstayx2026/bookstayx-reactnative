@@ -23,8 +23,8 @@ export type CustomerNavItem = {
 
 export const customerNavItems: CustomerNavItem[] = [
   { href: "/", label: "Home", shortLabel: "Home", icon: Home, exact: true },
-  { href: "/locations", label: "Locations", shortLabel: "Places", icon: MapPin },
   { href: "/properties", label: "Properties", shortLabel: "Stays", icon: Hotel },
+  { href: "/locations", label: "Locations", shortLabel: "Places", icon: MapPin },
   { href: "/referrals", label: "Referral", shortLabel: "Referral", icon: IndianRupee },
   { href: "/bookings", label: "Bookings", shortLabel: "Bookings", icon: CalendarDays },
   { href: "/saved", label: "Saved", shortLabel: "Saved", icon: Heart },
