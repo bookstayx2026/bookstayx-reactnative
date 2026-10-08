@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { focusRingProps, useFinePointer } from "@/hooks/use-fine-pointer";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, type Href } from "expo-router";
 import { ArrowRight, Heart, MapPin, Star } from "lucide-react-native";
 import type { Location, Property } from "@/data/discovery";
 import { colors, fontFamilies, radii, spacing } from "@/theme";
-import { useIsDesktop, useResponsiveValue, useWindowClass } from "@/hooks/use-window-class";
+import { useIsDesktop, useResponsiveValue } from "@/hooks/use-window-class";
 import { useCustomerData } from "@/components/customer/CustomerDataContext";
 
 function getLocationTag(location: Location) {
@@ -29,7 +32,8 @@ export function LocationCard({
   style?: ViewStyle;
 }) {
   const isDesktop = useIsDesktop();
-  const windowClass = useWindowClass();
+  const reducedMotion = useReducedMotion();
+  const finePointer = useFinePointer();
 
   const webWidth = useResponsiveValue<string>({
     compact: "calc(50% - 8px)",
@@ -50,21 +54,16 @@ export function LocationCard({
       accessibilityRole="button"
       accessibilityLabel={`Open ${location.name}`}
       onPress={() => router.push(`/locations/${location.slug}` as Href)}
-      style={({ pressed }) => [
+      {...focusRingProps()}
+      style={({ pressed, hovered }) => [
         styles.location,
         { width: responsiveWidth },
         compact ? styles.locationCompact : null,
         isDesktop && styles.locationDesktop,
-        Platform.select({
-          web: {
-            cursor: "pointer",
-            outlineStyle: "none",
-            transition: "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease",
-          } as any,
-          default: {},
-        }),
+        cardMotion(reducedMotion),
         style,
-        pressed && styles.pressed,
+        finePointer && hovered && !pressed && !reducedMotion && styles.cardHover,
+        pressed && (reducedMotion ? styles.pressedStill : styles.pressed),
       ]}
     >
       <Image source={location.image} contentFit="cover" style={StyleSheet.absoluteFill} />
@@ -130,10 +129,11 @@ export function PropertyCard({
   grid?: boolean;
   style?: ViewStyle;
 }) {
-  const windowClass = useWindowClass();
   const isDesktop = useIsDesktop();
   const { toggleSaved, isSaved } = useCustomerData();
   const saved = isSaved(property.id);
+  const reducedMotion = useReducedMotion();
+  const finePointer = useFinePointer();
 
   const webGridWidth = useResponsiveValue<string>({
     compact: "calc(50% - 8px)",
@@ -146,24 +146,31 @@ export function PropertyCard({
     expanded: "23.5%",
   });
   const gridWidth = Platform.OS === "web" ? webGridWidth : nativeGridWidth;
+  const [hot, setHot] = useState(false);
+  const [down, setDown] = useState(false);
 
   return (
-    <Pressable
-      accessibilityLabel={`Open ${property.name}`}
-      onPress={() => router.push(`/properties/${property.id}` as Href)}
-      style={({ pressed }) => [
+    <View
+      style={[
         grid ? [styles.propertyGrid, { width: gridWidth }] : styles.property,
-        Platform.select({
-          web: {
-            cursor: "pointer",
-            outlineStyle: "none",
-          } as any,
-          default: {},
-        }),
+        cardMotion(reducedMotion),
         style,
-        pressed && styles.pressed,
+        finePointer && hot && !down && !reducedMotion && styles.cardHover,
+        down && (reducedMotion ? styles.pressedStill : styles.pressed),
       ]}
     >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${property.name}`}
+        {...focusRingProps()}
+        onHoverIn={() => setHot(true)}
+        onHoverOut={() => setHot(false)}
+        onPressIn={() => setDown(true)}
+        onPressOut={() => setDown(false)}
+        onPress={() => router.push(`/properties/${property.id}` as Href)}
+        style={styles.cardHit}
+      />
+      <View pointerEvents="none">
       <View style={grid ? styles.propertyGridImage : styles.propertyImage}>
         <Image source={property.image} contentFit="cover" style={StyleSheet.absoluteFill} />
         <LinearGradient
@@ -176,27 +183,6 @@ export function PropertyCard({
             <Text style={styles.badgeText}>{property.badge}</Text>
           </View>
         ) : null}
-        <Pressable
-          accessibilityLabel={saved ? `Remove ${property.name} from saved` : `Save ${property.name}`}
-          onPress={(e) => {
-            e.stopPropagation();
-            toggleSaved(property.id);
-          }}
-          style={({ pressed }) => [
-            styles.heartButton,
-            pressed && styles.pressed,
-            Platform.select({
-              web: { cursor: "pointer" } as any,
-              default: {},
-            }),
-          ]}
-        >
-          <Heart
-            size={14}
-            color={saved ? "#E11D48" : "#fff"}
-            fill={saved ? "#E11D48" : "transparent"}
-          />
-        </Pressable>
       </View>
       <View style={[styles.propertyBody, grid && styles.propertyGridBody]}>
         <Text numberOfLines={1} style={styles.propertyName}>
@@ -238,12 +224,48 @@ export function PropertyCard({
           )}
         </View>
       </View>
-    </Pressable>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={saved ? `Remove ${property.name} from saved` : `Save ${property.name}`}
+        {...focusRingProps()}
+        onPress={() => toggleSaved(property.id)}
+        style={({ pressed }) => [
+          styles.heartHit,
+          cardMotion(reducedMotion),
+          pressed && (reducedMotion ? styles.pressedStill : styles.pressed),
+        ]}
+      >
+        <View style={styles.heartButton}>
+          <Heart
+            size={14}
+            color={saved ? "#E11D48" : "#fff"}
+            fill={saved ? "#E11D48" : "transparent"}
+          />
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
+function cardMotion(reducedMotion: boolean) {
+  if (Platform.OS !== "web") return null;
+  return {
+    cursor: "pointer",
+    transitionProperty: "transform, opacity, border-color",
+    transitionDuration: reducedMotion ? "120ms" : "180ms",
+    transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+  } as ViewStyle;
+}
+
 const styles = StyleSheet.create({
+  cardHit: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
   pressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  pressedStill: { opacity: 0.88 },
+  cardHover: {
+    transform: [{ scale: 1.012 }],
+    borderColor: "rgba(224, 184, 74, 0.45)",
+  },
   location: {
     aspectRatio: 3 / 3.4,
     borderRadius: 16,
@@ -301,10 +323,12 @@ const styles = StyleSheet.create({
   locationCopy: { position: "absolute", left: 8, right: 8, bottom: 8 },
   categoryRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 4,
   },
   locationTag: {
+    flexShrink: 1,
     color: "rgba(224, 184, 74, 0.95)",
     fontFamily: fontFamilies.sansBold,
     fontSize: 8,
@@ -312,6 +336,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   categoryDotText: {
+    flexShrink: 1,
     color: "rgba(255, 255, 255, 0.6)",
     fontFamily: fontFamilies.sansMedium,
     fontSize: 8,
@@ -393,10 +418,17 @@ const styles = StyleSheet.create({
   },
   propertyImage: { height: 165 },
   propertyGridImage: { aspectRatio: 16 / 11 },
-  heartButton: {
+  heartHit: {
     position: "absolute",
-    right: 10,
-    top: 10,
+    zIndex: 2,
+    right: 3,
+    top: 3,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heartButton: {
     width: 30,
     height: 30,
     borderRadius: 15,
