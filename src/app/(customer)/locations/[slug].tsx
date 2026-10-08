@@ -28,7 +28,9 @@ import { PropertyCard } from "@/components/discovery";
 import { getLocation, images } from "@/data/discovery";
 import { usePropertyCatalogue } from "@/hooks/use-property-catalogue";
 import { colors, fontFamilies, layout, radii } from "@/theme";
-import { useIsDesktop } from "@/hooks/use-window-class";
+import { focusRingProps, useFinePointer } from "@/hooks/use-fine-pointer";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { useIsDesktop, useIsTablet } from "@/hooks/use-window-class";
 
 const lonavalaNearby = [
   {
@@ -96,12 +98,29 @@ const generalNearby = [
   },
 ];
 
+const webPress = Platform.select({
+  web: {
+    cursor: "pointer",
+    transitionProperty: "transform, opacity, background-color, border-color",
+    transitionDuration: "160ms",
+    transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+  } as object,
+  default: {},
+});
+
 export default function LocationDetail() {
   const { slug = "lonavala" } = useLocalSearchParams<{ slug: string }>();
   const location = getLocation(slug) || getLocation("lonavala")!;
   const { items } = usePropertyCatalogue();
   const [saved, setSaved] = useState(false);
   const isDesktop = useIsDesktop();
+  const isTablet = useIsTablet();
+  const reducedMotion = useReducedMotion();
+  const finePointer = useFinePointer();
+  const pressStyle = (pressed: boolean, hovered: boolean) => [
+    pressed ? (reducedMotion ? styles.pressedStill : styles.pressed) : null,
+    finePointer && hovered && !pressed && !reducedMotion ? styles.hoverLift : null,
+  ];
 
   const stays = useMemo(
     () => items.filter((property) => property.locationSlug === location.slug),
@@ -169,30 +188,33 @@ export default function LocationDetail() {
 
   return (
     <AppScreen
-      contentContainerStyle={[styles.screen, isDesktop && styles.screenDesktop]}
+      contentContainerStyle={[styles.screen, isTablet && styles.screenTablet, isDesktop && styles.screenDesktop]}
     >
       {/* Hero Section */}
-      <View style={[styles.hero, isDesktop && styles.heroDesktop]}>
-        <Image source={location.image} contentFit="cover" style={StyleSheet.absoluteFill} />
+      <View style={[styles.hero, isTablet && styles.heroTablet, isDesktop && styles.heroDesktop]}>
+        <Image
+          source={location.image}
+          contentFit="cover"
+          contentPosition="center"
+          style={StyleSheet.absoluteFill}
+        />
         <LinearGradient
-          colors={["rgba(5,7,9,0.35)", "rgba(5,7,9,0.72)", "rgba(5,7,9,0.96)"]}
-          locations={[0, 0.45, 1]}
+          colors={["rgba(5,7,9,0.2)", "rgba(5,7,9,0.42)", "rgba(5,7,9,0.82)"]}
+          locations={[0, 0.48, 1]}
           style={StyleSheet.absoluteFill}
         />
 
         {/* Top Navigation & Action Row */}
-        <View style={[styles.topbar, isDesktop && styles.topbarDesktop]}>
+        <View style={[styles.topbar, isTablet && styles.topbarTablet, isDesktop && styles.topbarDesktop]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Back to locations"
+            {...focusRingProps()}
             onPress={() => router.back()}
-            style={({ pressed }) => [
+            style={({ pressed, hovered }) => [
               styles.backButton,
-              pressed && styles.pressed,
-              Platform.select({
-                web: { cursor: "pointer", outlineStyle: "none" } as any,
-                default: {},
-              }),
+              webPress,
+              pressStyle(pressed, hovered),
             ]}
           >
             <ArrowLeft size={16} color={colors.gold} />
@@ -217,7 +239,7 @@ export default function LocationDetail() {
         </View>
 
         {/* Main Hero Content Area */}
-        <View style={[styles.heroContent, isDesktop && styles.heroContentDesktop]}>
+        <View style={[styles.heroContent, isTablet && styles.heroContentTablet, isDesktop && styles.heroContentDesktop]}>
           <View style={[styles.heroGrid, isDesktop && styles.heroGridDesktop]}>
             
             {/* Left Hero Column: Headline & Intro */}
@@ -229,11 +251,11 @@ export default function LocationDetail() {
                 </Text>
               </View>
 
-              <Text style={[styles.heroTitle, isDesktop && styles.heroTitleDesktop]}>
+              <Text style={[styles.heroTitle, isTablet && styles.heroTitleTablet, isDesktop && styles.heroTitleDesktop]}>
                 {location.name}
               </Text>
 
-              <Text style={[styles.heroTagline, isDesktop && styles.heroTaglineDesktop]}>
+              <Text style={[styles.heroTagline, isTablet && styles.heroTaglineTablet, isDesktop && styles.heroTaglineDesktop]}>
                 {location.tagline}
               </Text>
 
@@ -245,21 +267,19 @@ export default function LocationDetail() {
               <View style={styles.heroActionRow}>
                 <Pressable
                   accessibilityRole="button"
+                  {...focusRingProps()}
                   onPress={() => {
                     const staysEl = typeof document !== "undefined" ? document.getElementById("location-stays") : null;
                     if (staysEl) {
-                      staysEl.scrollIntoView({ behavior: "smooth" });
+                      staysEl.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth" });
                     } else {
                       router.push(`/properties?location=${location.slug}`);
                     }
                   }}
-                  style={({ pressed }) => [
+                  style={({ pressed, hovered }) => [
                     styles.primaryHeroBtn,
-                    pressed && styles.pressed,
-                    Platform.select({
-                      web: { cursor: "pointer", outlineStyle: "none" } as any,
-                      default: {},
-                    }),
+                    webPress,
+                    pressStyle(pressed, hovered),
                   ]}
                 >
                   <Text style={styles.primaryHeroBtnText}>Explore Available Stays</Text>
@@ -268,14 +288,12 @@ export default function LocationDetail() {
 
                 <Pressable
                   accessibilityRole="button"
+                  {...focusRingProps()}
                   onPress={() => openDirections(location.name)}
-                  style={({ pressed }) => [
+                  style={({ pressed, hovered }) => [
                     styles.secondaryHeroBtn,
-                    pressed && styles.pressed,
-                    Platform.select({
-                      web: { cursor: "pointer", outlineStyle: "none" } as any,
-                      default: {},
-                    }),
+                    webPress,
+                    pressStyle(pressed, hovered),
                   ]}
                 >
                   <Navigation size={14} color={colors.gold} />
@@ -284,8 +302,8 @@ export default function LocationDetail() {
               </View>
             </View>
 
-            {/* Right Hero Column: Overview Glass Card (Desktop) */}
-            <View style={[styles.heroOverviewCard, isDesktop && styles.heroOverviewCardDesktop]}>
+            {isDesktop ? (
+            <View style={[styles.heroOverviewCard, styles.heroOverviewCardDesktop]}>
               <View style={styles.overviewTop}>
                 <View style={styles.ratingBadgeLarge}>
                   <Star size={16} fill={colors.gold} color={colors.gold} />
@@ -336,14 +354,71 @@ export default function LocationDetail() {
                 </View>
               </View>
             </View>
+            ) : null}
 
           </View>
         </View>
       </View>
 
+      {!isDesktop ? (
+        <View style={[styles.heroOverviewWrap, isTablet && styles.heroOverviewWrapTablet]}>
+          <View style={styles.heroOverviewCard}>
+            <View style={styles.overviewTop}>
+              <View style={styles.ratingBadgeLarge}>
+                <Star size={16} fill={colors.gold} color={colors.gold} />
+                <Text style={styles.ratingValueLarge}>{location.rating.toFixed(1)}</Text>
+                <Text style={styles.ratingReviewsLarge}>({location.reviews})</Text>
+              </View>
+              <View style={styles.topDestBadge}>
+                <Sparkles size={11} color={colors.gold} />
+                <Text style={styles.topDestText}>TOP DESTINATION</Text>
+              </View>
+            </View>
+
+            <View style={styles.overviewDivider} />
+
+            <View style={styles.overviewStats}>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Category</Text>
+                <Text style={styles.overviewValue}>{location.category}</Text>
+              </View>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Best Season</Text>
+                <Text style={styles.overviewValue}>
+                  {isBeach ? "Oct – May (Sunny)" : "Jun – Feb (Monsoon & Winter)"}
+                </Text>
+              </View>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Travel Distance</Text>
+                <Text style={styles.overviewValue}>
+                  {location.slug === "lonavala"
+                    ? "65 km from Pune • 85 km from Mumbai"
+                    : "Convenient highway access from Pune & Mumbai"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.overviewHighlightPills}>
+              <View style={styles.overviewPill}>
+                <CheckCircle2 size={12} color={colors.gold} />
+                <Text style={styles.overviewPillText}>Verified Stays</Text>
+              </View>
+              <View style={styles.overviewPill}>
+                <CheckCircle2 size={12} color={colors.gold} />
+                <Text style={styles.overviewPillText}>Family Friendly</Text>
+              </View>
+              <View style={styles.overviewPill}>
+                <CheckCircle2 size={12} color={colors.gold} />
+                <Text style={styles.overviewPillText}>Scenic Views</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
       {/* Modern Quick Stats Strip */}
-      <View style={[styles.statsStrip, isDesktop && styles.statsStripDesktop]}>
-        <View style={styles.statItem}>
+      <View style={[styles.statsStrip, isTablet && styles.statsStripTablet, isDesktop && styles.statsStripDesktop]}>
+        <View style={[styles.statItem, isTablet && styles.statItemTablet]}>
           <View style={styles.statIconCircle}>
             {isBeach ? <Palmtree size={18} color={colors.gold} /> : <Compass size={18} color={colors.gold} />}
           </View>
@@ -353,7 +428,7 @@ export default function LocationDetail() {
           </View>
         </View>
 
-        <View style={[styles.statItem, styles.statDivider]}>
+        <View style={[styles.statItem, isTablet && styles.statItemTablet, isDesktop && styles.statDivider]}>
           <View style={styles.statIconCircle}>
             <CalendarDays size={18} color={colors.gold} />
           </View>
@@ -365,7 +440,7 @@ export default function LocationDetail() {
           </View>
         </View>
 
-        <View style={[styles.statItem, styles.statDivider]}>
+        <View style={[styles.statItem, isTablet && styles.statItemTablet, isDesktop && styles.statDivider]}>
           <View style={styles.statIconCircle}>
             <Car size={18} color={colors.gold} />
           </View>
@@ -375,7 +450,7 @@ export default function LocationDetail() {
           </View>
         </View>
 
-        <View style={[styles.statItem, styles.statDivider]}>
+        <View style={[styles.statItem, isTablet && styles.statItemTablet, isDesktop && styles.statDivider]}>
           <View style={styles.statIconCircle}>
             <Star size={18} color={colors.gold} />
           </View>
@@ -387,14 +462,14 @@ export default function LocationDetail() {
       </View>
 
       {/* Content Container (Center Aligned on Desktop) */}
-      <View style={[styles.bodyContent, isDesktop && styles.bodyContentDesktop]}>
+      <View style={[styles.bodyContent, isTablet && styles.bodyContentTablet, isDesktop && styles.bodyContentDesktop]}>
 
         {/* Glimpses & Media Showcase */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionBadge}>PHOTO & VIDEO SHOWCASE</Text>
-              <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>
+              <Text style={[styles.sectionTitle, isTablet && styles.sectionTitleTablet, isDesktop && styles.sectionTitleDesktop]}>
                 Glimpses of {location.name}
               </Text>
               <Text style={styles.sectionSubtitle}>
@@ -403,13 +478,15 @@ export default function LocationDetail() {
             </View>
           </View>
 
-          <View style={[styles.galleryGrid, isDesktop && styles.galleryGridDesktop]}>
+          <View style={[styles.galleryGrid, (isTablet || isDesktop) && styles.galleryGridDesktop]}>
             {galleryItems.map((item, index) => (
               <View
                 key={index}
                 style={[
                   styles.galleryCard,
-                  isDesktop ? styles.galleryCardDesktop : styles.galleryCardMobile,
+                  isTablet && styles.galleryCardTablet,
+                  isDesktop && styles.galleryCardDesktop,
+                  !isTablet && !isDesktop && styles.galleryCardMobile,
                 ]}
               >
                 <Image source={item.image} contentFit="cover" style={StyleSheet.absoluteFill} />
@@ -442,13 +519,13 @@ export default function LocationDetail() {
         </View>
 
         {/* About & Experiences Section */}
-        <View style={[styles.aboutCard, isDesktop && styles.aboutCardDesktop]}>
+        <View style={[styles.aboutCard, isTablet && styles.aboutCardTablet, isDesktop && styles.aboutCardDesktop]}>
           <View style={styles.aboutHeader}>
             <View style={styles.aboutBadge}>
               <Sparkles size={12} color={colors.gold} />
               <Text style={styles.aboutBadgeText}>LOCAL EXPERIENCES</Text>
             </View>
-            <Text style={[styles.aboutTitle, isDesktop && styles.aboutTitleDesktop]}>
+            <Text style={[styles.aboutTitle, isTablet && styles.aboutTitleTablet, isDesktop && styles.aboutTitleDesktop]}>
               Why Visit {location.name}?
             </Text>
             <Text style={styles.aboutCopy}>
@@ -456,9 +533,9 @@ export default function LocationDetail() {
             </Text>
           </View>
 
-          <View style={[styles.experienceGrid, isDesktop && styles.experienceGridDesktop]}>
+          <View style={[styles.experienceGrid, (isTablet || isDesktop) && styles.experienceGridDesktop]}>
             {experiences.map((exp) => (
-              <View key={exp.title} style={[styles.experienceCard, isDesktop && styles.experienceCardDesktop]}>
+              <View key={exp.title} style={[styles.experienceCard, (isTablet || isDesktop) && styles.experienceCardDesktop]}>
                 <View style={styles.expIconCircle}>
                   <exp.Icon size={18} color={colors.gold} />
                 </View>
@@ -476,7 +553,7 @@ export default function LocationDetail() {
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionBadge}>ATTRACTIONS & SIGHTSEEING</Text>
-              <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>
+              <Text style={[styles.sectionTitle, isTablet && styles.sectionTitleTablet, isDesktop && styles.sectionTitleDesktop]}>
                 Best Places to Visit Near {location.name}
               </Text>
               <Text style={styles.sectionSubtitle}>
@@ -485,25 +562,19 @@ export default function LocationDetail() {
             </View>
           </View>
 
-          <View style={[styles.nearbyGrid, isDesktop && styles.nearbyGridDesktop]}>
+          <View style={[styles.nearbyGrid, (isTablet || isDesktop) && styles.nearbyGridDesktop]}>
             {nearbyPlaces.map((place) => (
               <Pressable
                 key={place.name}
                 accessibilityRole="button"
                 accessibilityLabel={`Open directions to ${place.name}`}
+                {...focusRingProps()}
                 onPress={() => openDirections(place.name)}
-                style={({ pressed }) => [
+                style={({ pressed, hovered }) => [
                   styles.nearbyCard,
-                  isDesktop && styles.nearbyCardDesktop,
-                  pressed && styles.pressed,
-                  Platform.select({
-                    web: {
-                      cursor: "pointer",
-                      outlineStyle: "none",
-                      transition: "transform 0.2s ease, border-color 0.2s ease",
-                    } as any,
-                    default: {},
-                  }),
+                  (isTablet || isDesktop) && styles.nearbyCardDesktop,
+                  webPress,
+                  pressStyle(pressed, hovered),
                 ]}
               >
                 <Image source={place.image} contentFit="cover" style={styles.nearbyThumb} />
@@ -531,7 +602,7 @@ export default function LocationDetail() {
         </View>
 
         {/* CTA Banner */}
-        <View style={[styles.ctaBanner, isDesktop && styles.ctaBannerDesktop]}>
+        <View style={[styles.ctaBanner, isTablet && styles.ctaBannerTablet, isDesktop && styles.ctaBannerDesktop]}>
           <LinearGradient
             colors={["rgba(224, 184, 74, 0.18)", "rgba(18, 22, 28, 0.95)", "rgba(11, 14, 18, 0.98)"]}
             start={{ x: 0, y: 0 }}
@@ -544,7 +615,7 @@ export default function LocationDetail() {
                 <Sparkles size={11} color={colors.gold} />
                 <Text style={styles.ctaBadgeText}>EXCLUSIVE GETAWAYS</Text>
               </View>
-              <Text style={[styles.ctaTitle, isDesktop && styles.ctaTitleDesktop]}>
+              <Text style={[styles.ctaTitle, isTablet && styles.ctaTitleTablet, isDesktop && styles.ctaTitleDesktop]}>
                 Ready for your getaway to {location.name}?
               </Text>
               <Text style={styles.ctaSubtitle}>
@@ -554,14 +625,12 @@ export default function LocationDetail() {
 
             <Pressable
               accessibilityRole="button"
+              {...focusRingProps()}
               onPress={() => router.push(`/properties?location=${location.slug}`)}
-              style={({ pressed }) => [
+              style={({ pressed, hovered }) => [
                 styles.ctaActionBtn,
-                pressed && styles.pressed,
-                Platform.select({
-                  web: { cursor: "pointer", outlineStyle: "none" } as any,
-                  default: {},
-                }),
+                webPress,
+                pressStyle(pressed, hovered),
               ]}
             >
               <Text style={styles.ctaActionBtnText}>Browse All Stays</Text>
@@ -575,7 +644,7 @@ export default function LocationDetail() {
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionBadge}>CURATED STAYS</Text>
-              <Text style={[styles.sectionTitle, isDesktop && styles.sectionTitleDesktop]}>
+              <Text style={[styles.sectionTitle, isTablet && styles.sectionTitleTablet, isDesktop && styles.sectionTitleDesktop]}>
                 Available Properties Near {location.name}
               </Text>
               <Text style={styles.sectionSubtitle}>
@@ -585,7 +654,7 @@ export default function LocationDetail() {
           </View>
 
           {stays.length ? (
-            <View style={[styles.propertiesGrid, isDesktop && styles.propertiesGridDesktop]}>
+            <View style={[styles.propertiesGrid, (isTablet || isDesktop) && styles.propertiesGridDesktop]}>
               {stays.map((property) => (
                 <PropertyCard key={property.id} property={property} grid />
               ))}
@@ -598,14 +667,13 @@ export default function LocationDetail() {
                 We are currently curating the finest private villas and boutique stays in {location.name}. Check back soon or explore neighboring regions.
               </Text>
               <Pressable
+                {...focusRingProps()}
+                accessibilityRole="button"
                 onPress={() => router.push("/properties")}
-                style={({ pressed }) => [
+                style={({ pressed, hovered }) => [
                   styles.emptyBrowseBtn,
-                  pressed && styles.pressed,
-                  Platform.select({
-                    web: { cursor: "pointer", outlineStyle: "none" } as any,
-                    default: {},
-                  }),
+                  webPress,
+                  pressStyle(pressed, hovered),
                 ]}
               >
                 <Text style={styles.emptyBrowseBtnText}>Explore All Maharashtra Stays</Text>
@@ -628,29 +696,35 @@ function CircleButton({
   onPress: () => void;
   children: React.ReactNode;
 }) {
+  const reducedMotion = useReducedMotion();
+  const finePointer = useFinePointer();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      {...focusRingProps()}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.circleBtn,
-        pressed && styles.pressed,
-        Platform.select({
-          web: { cursor: "pointer", outlineStyle: "none" } as any,
-          default: {},
-        }),
+      style={({ pressed, hovered }) => [
+        styles.circleHit,
+        webPress,
+        pressed ? (reducedMotion ? styles.pressedStill : styles.pressed) : null,
+        finePointer && hovered && !pressed && !reducedMotion ? styles.hoverLift : null,
       ]}
     >
-      {children}
+      <View style={styles.circleBtn}>{children}</View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   pressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  pressedStill: { opacity: 0.84 },
+  hoverLift: { transform: [{ scale: 1.012 }] },
   screen: {
     paddingBottom: layout.bottomChromeReserve + 20,
+  },
+  screenTablet: {
+    paddingBottom: layout.bottomChromeReserve + 8,
   },
   screenDesktop: {
     paddingBottom: layout.desktopBottomReserve + 24,
@@ -658,10 +732,13 @@ const styles = StyleSheet.create({
 
   // Hero Section
   hero: {
-    minHeight: 520,
+    minHeight: 460,
     overflow: "hidden",
     position: "relative",
     justifyContent: "space-between",
+  },
+  heroTablet: {
+    minHeight: 560,
   },
   heroDesktop: {
     minHeight: 580,
@@ -674,6 +751,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     zIndex: 10,
   },
+  topbarTablet: {
+    paddingTop: 20,
+    paddingHorizontal: 28,
+  },
   topbarDesktop: {
     paddingTop: 24,
     paddingHorizontal: 40,
@@ -685,8 +766,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    minHeight: 44,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: radii.pill,
     backgroundColor: "rgba(11, 14, 18, 0.75)",
     borderWidth: 1,
@@ -705,6 +787,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  circleHit: {
+    width: 44,
+    height: 44,
+    margin: -1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   circleBtn: {
     width: 42,
     height: 42,
@@ -721,8 +810,13 @@ const styles = StyleSheet.create({
   },
 
   heroContent: {
+    paddingTop: 28,
     paddingHorizontal: 20,
-    paddingBottom: 36,
+    paddingBottom: 16,
+  },
+  heroContentTablet: {
+    paddingHorizontal: 28,
+    paddingBottom: 40,
   },
   heroContentDesktop: {
     paddingHorizontal: 40,
@@ -757,7 +851,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(224, 184, 74, 0.12)",
     borderWidth: 1,
     borderColor: "rgba(224, 184, 74, 0.4)",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   regionText: {
     color: colors.gold,
@@ -772,27 +866,35 @@ const styles = StyleSheet.create({
     lineHeight: 42,
     letterSpacing: -0.5,
   },
+  heroTitleTablet: {
+    fontSize: 42,
+    lineHeight: 48,
+  },
   heroTitleDesktop: {
     fontSize: 50,
     lineHeight: 56,
   },
   heroTagline: {
-    marginTop: 8,
+    marginTop: 12,
     color: colors.gold,
     fontFamily: fontFamilies.sansSemiBold,
     fontSize: 15,
     lineHeight: 22,
+  },
+  heroTaglineTablet: {
+    fontSize: 16,
+    lineHeight: 23,
   },
   heroTaglineDesktop: {
     fontSize: 17,
     lineHeight: 24,
   },
   heroDescription: {
-    marginTop: 12,
+    marginTop: 16,
     color: colors.textSecondary,
     fontFamily: fontFamilies.sans,
     fontSize: 13.5,
-    lineHeight: 22,
+    lineHeight: 24,
     maxWidth: 700,
   },
   heroDescriptionDesktop: {
@@ -803,13 +905,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
-    marginTop: 22,
+    marginTop: 28,
     alignItems: "center",
   },
   primaryHeroBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
+    minHeight: 44,
     backgroundColor: colors.gold,
     paddingHorizontal: 22,
     paddingVertical: 12,
@@ -823,7 +927,9 @@ const styles = StyleSheet.create({
   secondaryHeroBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
+    minHeight: 44,
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: radii.pill,
@@ -838,6 +944,15 @@ const styles = StyleSheet.create({
   },
 
   // Overview Glass Card on Desktop
+  heroOverviewWrap: {
+    paddingHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  heroOverviewWrapTablet: {
+    paddingHorizontal: 28,
+    marginTop: 16,
+  },
   heroOverviewCard: {
     backgroundColor: "rgba(13, 17, 23, 0.85)",
     borderRadius: 20,
@@ -953,6 +1068,10 @@ const styles = StyleSheet.create({
     borderColor: "rgba(224, 184, 74, 0.15)",
     gap: 16,
   },
+  statsStripTablet: {
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+  },
   statsStripDesktop: {
     paddingHorizontal: 40,
     paddingVertical: 20,
@@ -975,6 +1094,12 @@ const styles = StyleSheet.create({
     gap: 12,
     minWidth: 180,
     flex: 1,
+  },
+  statItemTablet: {
+    width: "47%",
+    minWidth: 0,
+    flexGrow: 0,
+    flexBasis: "47%",
   },
   statDivider: {
     borderLeftWidth: 0,
@@ -1011,6 +1136,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginTop: 20,
   },
+  bodyContentTablet: {
+    paddingHorizontal: 28,
+    marginTop: 28,
+  },
   bodyContentDesktop: {
     paddingHorizontal: 40,
     maxWidth: 1360,
@@ -1042,6 +1171,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
   },
+  sectionTitleTablet: {
+    fontSize: 26,
+    lineHeight: 32,
+  },
   sectionTitleDesktop: {
     fontSize: 28,
     lineHeight: 34,
@@ -1072,13 +1205,15 @@ const styles = StyleSheet.create({
   galleryCardMobile: {
     aspectRatio: 16 / 9,
   },
+  galleryCardTablet: {
+    width: "48.6%",
+    aspectRatio: 16 / 10,
+  },
   galleryCardDesktop: {
     width: "23.8%",
     aspectRatio: 16 / 11,
     ...Platform.select({
       web: {
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-        cursor: "pointer",
         boxShadow: "0 4px 18px rgba(0, 0, 0, 0.3)",
       } as any,
       default: {},
@@ -1138,6 +1273,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(224, 184, 74, 0.2)",
     padding: 22,
   },
+  aboutCardTablet: {
+    padding: 26,
+  },
   aboutCardDesktop: {
     padding: 32,
   },
@@ -1161,6 +1299,10 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.displayMedium,
     fontSize: 22,
     lineHeight: 28,
+  },
+  aboutTitleTablet: {
+    fontSize: 24,
+    lineHeight: 30,
   },
   aboutTitleDesktop: {
     fontSize: 26,
@@ -1316,6 +1458,9 @@ const styles = StyleSheet.create({
     position: "relative",
     padding: 24,
   },
+  ctaBannerTablet: {
+    padding: 28,
+  },
   ctaBannerDesktop: {
     padding: 36,
   },
@@ -1344,6 +1489,10 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
   },
+  ctaTitleTablet: {
+    fontSize: 25,
+    lineHeight: 31,
+  },
   ctaTitleDesktop: {
     fontSize: 28,
     lineHeight: 34,
@@ -1360,7 +1509,9 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
+    minHeight: 44,
     backgroundColor: colors.gold,
     paddingHorizontal: 24,
     paddingVertical: 12,
@@ -1408,9 +1559,12 @@ const styles = StyleSheet.create({
   },
   emptyBrowseBtn: {
     marginTop: 18,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.gold,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: radii.pill,
   },
   emptyBrowseBtnText: {
