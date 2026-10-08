@@ -41,7 +41,19 @@ import {
 } from "@/data/discovery";
 import { usePropertyCatalogue } from "@/hooks/use-property-catalogue";
 import { colors, fontFamilies, layout, radii, spacing } from "@/theme";
+import { focusRingProps, useFinePointer } from "@/hooks/use-fine-pointer";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useIsDesktop, useIsTablet } from "@/hooks/use-window-class";
+
+const webPress = Platform.select({
+  web: {
+    cursor: "pointer",
+    transitionProperty: "transform, opacity, background-color, border-color",
+    transitionDuration: "160ms",
+    transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+  } as object,
+  default: {},
+});
 
 const categories = [
   { id: "all", label: "All Properties", shortLabel: "All", Icon: LayoutGrid },
@@ -151,6 +163,12 @@ export default function PropertiesScreen() {
   const isDesktop = useIsDesktop();
   const isTablet = useIsTablet();
   const wide = isDesktop || isTablet;
+  const reducedMotion = useReducedMotion();
+  const finePointer = useFinePointer();
+  const pressStyle = (pressed: boolean, hovered: boolean) => [
+    pressed ? (reducedMotion ? styles.pressedStill : styles.chipPressed) : null,
+    finePointer && hovered && !pressed && !reducedMotion ? styles.hoverLift : null,
+  ];
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     onScroll(event);
@@ -267,24 +285,21 @@ export default function PropertiesScreen() {
       {/* 1. Category Pills */}
       <View style={styles.categoriesContainer}>
         {wide ? (
-          <View style={styles.categoriesWrap}>
+          <View style={[styles.categoriesWrap, isTablet && styles.categoriesWrapTablet]}>
             {categories.map(({ id, label, Icon }) => {
               const active = category === id;
               return (
                 <Pressable
+                  {...focusRingProps()}
                   key={id}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                   onPress={() => setCategory(id)}
-                  style={({ pressed }) => [
+                  style={({ pressed, hovered }) => [
                     styles.chip,
                     styles.chipLarge,
                     active && styles.activeChip,
-                    pressed && styles.chipPressed,
-                    Platform.select({
-                      web: { cursor: "pointer", outlineStyle: "none" } as any,
-                      default: {},
-                    }),
+                    webPress, pressStyle(pressed, hovered),
                   ]}
                 >
                   <Icon
@@ -314,14 +329,15 @@ export default function PropertiesScreen() {
               const active = category === id;
               return (
                 <Pressable
+                  {...focusRingProps()}
                   key={id}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                   onPress={() => setCategory(id)}
-                  style={({ pressed }) => [
+                  style={({ pressed, hovered }) => [
                     styles.mobileChip,
                     active && styles.activeChip,
-                    pressed && styles.chipPressed,
+                    webPress, pressStyle(pressed, hovered),
                   ]}
                 >
                   <Icon size={12} color={active ? colors.actionInk : colors.gold} />
@@ -338,22 +354,19 @@ export default function PropertiesScreen() {
       {/* 2. Location & Budget Controls */}
       {wide ? (
         /* Widescreen / Tablet: Elegant Unified 2nd Row */
-        <View style={styles.wideFilterBarSecondRow}>
+        <View style={[styles.wideFilterBarSecondRow, isTablet && styles.wideFilterBarSecondRowTablet]}>
           {/* Left: District & Sublocation Dropdown Controls */}
           <View style={styles.wideLocationGroup}>
             {/* District Dropdown Button */}
             <Pressable
+              {...focusRingProps()}
               accessibilityLabel="Filter by District"
               onPress={() => setDistrictDropdownOpen(true)}
-              style={({ pressed }) => [
+              style={({ pressed, hovered }) => [
                 styles.dropdownTrigger,
                 styles.wideDropdownTrigger,
                 selectedDistrict && styles.dropdownTriggerActive,
-                pressed && styles.chipPressed,
-                Platform.select({
-                  web: { cursor: "pointer", outlineStyle: "none" } as any,
-                  default: {},
-                }),
+                webPress, pressStyle(pressed, hovered),
               ]}
             >
               <MapPin
@@ -389,17 +402,14 @@ export default function PropertiesScreen() {
 
             {/* Sublocation Dropdown Button */}
             <Pressable
+              {...focusRingProps()}
               accessibilityLabel="Filter by Sublocation"
               onPress={() => setSublocationDropdownOpen(true)}
-              style={({ pressed }) => [
+              style={({ pressed, hovered }) => [
                 styles.dropdownTrigger,
                 styles.wideDropdownTrigger,
                 selectedSublocation && styles.dropdownTriggerActive,
-                pressed && styles.chipPressed,
-                Platform.select({
-                  web: { cursor: "pointer", outlineStyle: "none" } as any,
-                  default: {},
-                }),
+                webPress, pressStyle(pressed, hovered),
               ]}
             >
               <Compass
@@ -440,15 +450,12 @@ export default function PropertiesScreen() {
             <Text style={styles.filterLabel}>Budget:</Text>
             <View style={styles.tierPills}>
               <Pressable
+                {...focusRingProps()}
                 onPress={() => setTier(null)}
-                style={({ pressed }) => [
+                style={({ pressed, hovered }) => [
                   styles.tierPill,
                   tier === null && styles.tierPillActive,
-                  pressed && styles.chipPressed,
-                  Platform.select({
-                    web: { cursor: "pointer", outlineStyle: "none" } as any,
-                    default: {},
-                  }),
+                  webPress, pressStyle(pressed, hovered),
                 ]}
               >
                 <Text
@@ -464,16 +471,13 @@ export default function PropertiesScreen() {
                 const active = tier === id;
                 return (
                   <Pressable
+                    {...focusRingProps()}
                     key={id}
                     onPress={() => setTier(tier === id ? null : id)}
-                    style={({ pressed }) => [
+                    style={({ pressed, hovered }) => [
                       styles.tierPill,
                       active && styles.tierPillActive,
-                      pressed && styles.chipPressed,
-                      Platform.select({
-                        web: { cursor: "pointer", outlineStyle: "none" } as any,
-                        default: {},
-                      }),
+                      webPress, pressStyle(pressed, hovered),
                     ]}
                   >
                     <Gem
@@ -496,6 +500,7 @@ export default function PropertiesScreen() {
             {/* Active Location Chip (if selected) */}
             {selectedSublocation || selectedDistrict || locationParam ? (
               <Pressable
+                {...focusRingProps()}
                 accessibilityLabel="Clear location filter"
                 onPress={() => {
                   setSelectedDistrict(null);
@@ -514,15 +519,12 @@ export default function PropertiesScreen() {
             {/* Reset Button */}
             {hasActiveFilters ? (
               <Pressable
+                {...focusRingProps()}
                 accessibilityRole="button"
                 onPress={resetFilters}
-                style={({ pressed }) => [
+                style={({ pressed, hovered }) => [
                   styles.resetBtn,
-                  pressed && styles.chipPressed,
-                  Platform.select({
-                    web: { cursor: "pointer", outlineStyle: "none" } as any,
-                    default: {},
-                  }),
+                  webPress, pressStyle(pressed, hovered),
                 ]}
               >
                 <RotateCcw size={11} color={colors.gold} />
@@ -546,13 +548,14 @@ export default function PropertiesScreen() {
           <View style={styles.mobileLocationRow}>
             {/* District Dropdown Button */}
             <Pressable
+              {...focusRingProps()}
               accessibilityLabel="Filter by District"
               onPress={() => setDistrictDropdownOpen(true)}
-              style={({ pressed }) => [
+              style={({ pressed, hovered }) => [
                 styles.dropdownTrigger,
                 styles.mobileDropdownTrigger,
                 selectedDistrict && styles.dropdownTriggerActive,
-                pressed && styles.chipPressed,
+                webPress, pressStyle(pressed, hovered),
               ]}
             >
               <MapPin
@@ -590,13 +593,14 @@ export default function PropertiesScreen() {
 
             {/* Sublocation Dropdown Button */}
             <Pressable
+              {...focusRingProps()}
               accessibilityLabel="Filter by Sublocation"
               onPress={() => setSublocationDropdownOpen(true)}
-              style={({ pressed }) => [
+              style={({ pressed, hovered }) => [
                 styles.dropdownTrigger,
                 styles.mobileDropdownTrigger,
                 selectedSublocation && styles.dropdownTriggerActive,
-                pressed && styles.chipPressed,
+                webPress, pressStyle(pressed, hovered),
               ]}
             >
               <Compass
@@ -641,12 +645,13 @@ export default function PropertiesScreen() {
               <Text style={styles.filterLabel}>Budget:</Text>
               <View style={styles.tierPills}>
                 <Pressable
+                  {...focusRingProps()}
                   onPress={() => setTier(null)}
-                  style={({ pressed }) => [
+                  style={({ pressed, hovered }) => [
                     styles.tierPill,
                     styles.mobileTierPill,
                     tier === null && styles.tierPillActive,
-                    pressed && styles.chipPressed,
+                    webPress, pressStyle(pressed, hovered),
                   ]}
                 >
                   <Text
@@ -663,13 +668,14 @@ export default function PropertiesScreen() {
                   const active = tier === id;
                   return (
                     <Pressable
+                      {...focusRingProps()}
                       key={id}
                       onPress={() => setTier(tier === id ? null : id)}
-                      style={({ pressed }) => [
+                      style={({ pressed, hovered }) => [
                         styles.tierPill,
                         styles.mobileTierPill,
                         active && styles.tierPillActive,
-                        pressed && styles.chipPressed,
+                        webPress, pressStyle(pressed, hovered),
                       ]}
                     >
                       <Gem
@@ -693,6 +699,7 @@ export default function PropertiesScreen() {
               {/* Active Location Chip */}
               {selectedSublocation || selectedDistrict || locationParam ? (
                 <Pressable
+                  {...focusRingProps()}
                   accessibilityLabel="Clear location filter"
                   onPress={() => {
                     setSelectedDistrict(null);
@@ -711,12 +718,13 @@ export default function PropertiesScreen() {
               {/* Reset Button */}
               {hasActiveFilters ? (
                 <Pressable
+                  {...focusRingProps()}
                   accessibilityRole="button"
                   onPress={resetFilters}
-                  style={({ pressed }) => [
+                  style={({ pressed, hovered }) => [
                     styles.resetBtn,
                     styles.mobileResetBtn,
-                    pressed && styles.chipPressed,
+                    webPress, pressStyle(pressed, hovered),
                   ]}
                 >
                   <RotateCcw size={11} color={colors.gold} />
@@ -799,15 +807,12 @@ export default function PropertiesScreen() {
                 Try clearing filters to view all available luxury escapes.
               </Text>
               <Pressable
+                {...focusRingProps()}
                 accessibilityRole="button"
                 onPress={resetFilters}
-                style={({ pressed }) => [
+                style={({ pressed, hovered }) => [
                   styles.emptyActionBtn,
-                  pressed && styles.chipPressed,
-                  Platform.select({
-                    web: { cursor: "pointer", outlineStyle: "none" } as any,
-                    default: {},
-                  }),
+                  webPress, pressStyle(pressed, hovered),
                 ]}
               >
                 <Sparkles size={14} color={colors.actionInk} />
@@ -824,14 +829,13 @@ export default function PropertiesScreen() {
           animationType="fade"
           onRequestClose={() => setDistrictDropdownOpen(false)}
         >
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => setDistrictDropdownOpen(false)}
-          >
+          <View style={styles.modalBackdrop}>
             <Pressable
-              style={[styles.modalCard, wide && styles.modalCardDesktop]}
-              onPress={(e) => e.stopPropagation()}
-            >
+              accessibilityLabel="Close district filter"
+              style={StyleSheet.absoluteFill}
+              onPress={() => setDistrictDropdownOpen(false)}
+            />
+            <View style={[styles.modalCard, wide && styles.modalCardDesktop]}>
               <View style={styles.modalHeader}>
                 <View style={styles.modalHeaderTitleRow}>
                   <MapPin size={18} color={colors.gold} />
@@ -843,6 +847,7 @@ export default function PropertiesScreen() {
                   </View>
                 </View>
                 <Pressable
+                  {...focusRingProps()}
                   accessibilityLabel="Close"
                   onPress={() => setDistrictDropdownOpen(false)}
                   style={styles.modalCloseBtn}
@@ -858,6 +863,7 @@ export default function PropertiesScreen() {
               >
                 {/* All Districts Option */}
                 <Pressable
+                  {...focusRingProps()}
                   onPress={() => handleSelectDistrict(null)}
                   style={[
                     styles.optionRow,
@@ -907,6 +913,7 @@ export default function PropertiesScreen() {
 
                   return (
                     <Pressable
+                      {...focusRingProps()}
                       key={dist.id}
                       onPress={() => handleSelectDistrict(dist.id)}
                       style={[
@@ -954,8 +961,8 @@ export default function PropertiesScreen() {
                   );
                 })}
               </ScrollView>
-            </Pressable>
-          </Pressable>
+            </View>
+          </View>
         </Modal>
 
         {/* Sublocation Dropdown Modal */}
@@ -968,17 +975,16 @@ export default function PropertiesScreen() {
             setSublocationSearch("");
           }}
         >
-          <Pressable
-            style={styles.modalBackdrop}
-            onPress={() => {
-              setSublocationDropdownOpen(false);
-              setSublocationSearch("");
-            }}
-          >
+          <View style={styles.modalBackdrop}>
             <Pressable
-              style={[styles.modalCard, wide && styles.modalCardDesktop]}
-              onPress={(e) => e.stopPropagation()}
-            >
+              accessibilityLabel="Close sub-location filter"
+              style={StyleSheet.absoluteFill}
+              onPress={() => {
+                setSublocationDropdownOpen(false);
+                setSublocationSearch("");
+              }}
+            />
+            <View style={[styles.modalCard, wide && styles.modalCardDesktop]}>
               <View style={styles.modalHeader}>
                 <View style={styles.modalHeaderTitleRow}>
                   <Compass size={18} color={colors.gold} />
@@ -996,6 +1002,7 @@ export default function PropertiesScreen() {
                   </View>
                 </View>
                 <Pressable
+                  {...focusRingProps()}
                   accessibilityLabel="Close"
                   onPress={() => {
                     setSublocationDropdownOpen(false);
@@ -1019,7 +1026,7 @@ export default function PropertiesScreen() {
                   style={styles.modalSearchInput}
                 />
                 {sublocationSearch ? (
-                  <Pressable onPress={() => setSublocationSearch("")}>
+                  <Pressable {...focusRingProps()} onPress={() => setSublocationSearch("")}>
                     <X size={14} color={colors.textMuted} />
                   </Pressable>
                 ) : null}
@@ -1032,6 +1039,7 @@ export default function PropertiesScreen() {
               >
                 {/* All in District / All Sublocations Option */}
                 <Pressable
+                  {...focusRingProps()}
                   onPress={() => handleSelectSublocation(null)}
                   style={[
                     styles.optionRow,
@@ -1080,6 +1088,7 @@ export default function PropertiesScreen() {
 
                   return (
                     <Pressable
+                      {...focusRingProps()}
                       key={loc.slug}
                       onPress={() => handleSelectSublocation(loc)}
                       style={[
@@ -1143,8 +1152,8 @@ export default function PropertiesScreen() {
                   </View>
                 ) : null}
               </ScrollView>
-            </Pressable>
-          </Pressable>
+            </View>
+          </View>
         </Modal>
 
         <CustomerFooter />
@@ -1247,6 +1256,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
   },
+  categoriesWrapTablet: {
+    justifyContent: "flex-start",
+  },
   mobileCategoriesScroll: {
     flexDirection: "row",
     gap: 6,
@@ -1270,7 +1282,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   mobileChip: {
-    minHeight: 32,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
@@ -1300,6 +1312,8 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     transform: [{ scale: 0.98 }],
   },
+  pressedStill: { opacity: 0.84 },
+  hoverLift: { transform: [{ scale: 1.012 }] },
   chipText: {
     color: colors.textSecondary,
     fontFamily: fontFamilies.sansSemiBold,
@@ -1324,13 +1338,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.07)",
   },
+  wideFilterBarSecondRowTablet: {
+    justifyContent: "flex-start",
+  },
   wideLocationGroup: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
   wideDropdownTrigger: {
-    minHeight: 38,
+    minHeight: 44,
     paddingHorizontal: 13,
     paddingVertical: 6,
     borderRadius: radii.pill,
@@ -1386,7 +1403,7 @@ const styles = StyleSheet.create({
   },
   mobileDropdownTrigger: {
     flex: 1,
-    minHeight: 35,
+    minHeight: 44,
     paddingHorizontal: 9,
     paddingVertical: 4,
     gap: 5,
@@ -1470,7 +1487,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   tierPill: {
-    minHeight: 30,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1483,7 +1500,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
   mobileTierPill: {
-    minHeight: 27,
+    minHeight: 44,
     paddingHorizontal: 9,
     paddingVertical: 4,
     gap: 3,
@@ -1505,7 +1522,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansBold,
   },
   locationChip: {
-    minHeight: 28,
+    minHeight: 44,
     maxWidth: 180,
     flexDirection: "row",
     alignItems: "center",
@@ -1518,7 +1535,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(224, 184, 74, 0.12)",
   },
   mobileLocationChip: {
-    minHeight: 27,
+    minHeight: 44,
     paddingHorizontal: 8,
   },
   locationChipText: {
@@ -1527,7 +1544,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   resetBtn: {
-    minHeight: 28,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -1539,7 +1556,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(5, 7, 9, 0.6)",
   },
   mobileResetBtn: {
-    minHeight: 27,
+    minHeight: 44,
     paddingHorizontal: 8,
   },
   resetBtnText: {
@@ -1587,8 +1604,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
-    gap: 12,
+    justifyContent: "flex-start",
+    gap: 16,
   },
   gridTablet: {
     marginTop: 20,
@@ -1640,7 +1657,7 @@ const styles = StyleSheet.create({
   },
   emptyActionBtn: {
     marginTop: 16,
-    minHeight: 40,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1666,6 +1683,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: "100%",
+    zIndex: 1,
     maxWidth: 440,
     maxHeight: "80%",
     borderRadius: 24,
@@ -1708,9 +1726,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   modalCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    margin: -6,
+    borderRadius: 22,
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     alignItems: "center",
     justifyContent: "center",
@@ -1750,6 +1769,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    minHeight: 44,
     paddingHorizontal: 12,
     paddingVertical: 11,
     borderRadius: 14,
