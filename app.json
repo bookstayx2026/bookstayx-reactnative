@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "BookStayX",
+    "slug": "bookstayx",
+    "version": "1.0.0",
+    "scheme": "bookstayx",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#050709",
+    "icon": "./assets/images/icon.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bookstayx.app"
+    },
+    "android": {
+      "package": "com.bookstayx.app",
+      "predictiveBackGestureEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#050709",
+        "foregroundImage": "./assets/images/adaptive-icon.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050709",
+          "image": "./assets/images/splash-logo.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#050709",
+            "image": "./assets/images/splash-logo.png"
+          }
+        }
+      ],
+      "expo-secure-store",
+      "expo-image"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
