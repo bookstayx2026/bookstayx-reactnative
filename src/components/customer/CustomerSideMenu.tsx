@@ -92,6 +92,7 @@ export function CustomerSideMenu() {
           </View>
 
           <ScrollView
+            style={styles.menuScroll}
             contentContainerStyle={styles.menuContent}
             showsVerticalScrollIndicator={false}
             bounces={false}
@@ -250,6 +251,7 @@ const styles = StyleSheet.create({
   },
   closeInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   menuContent: { paddingHorizontal: 12, paddingVertical: spacing.md, flexGrow: 1 },
+  menuScroll: { flex: 1, minHeight: 0 },
   sectionLabel: {
     paddingHorizontal: spacing.sm,
     marginBottom: 5,

@@ -36,6 +36,7 @@ function NavItem({ item }: { item: CustomerNavItem }) {
         const href = item.href === "/profile" && !session ? "/login" : item.href;
         router.push(href as Href);
       }}
+      containerStyle={styles.navSlot}
       style={styles.navItem}
     >
       <View style={[styles.navContent, referral && styles.referralContent]}>
@@ -129,11 +130,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   navItem: {
-    flex: 1,
+    width: "100%",
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
   },
+  navSlot: { flex: 1, height: "100%", minWidth: 0 },
   navContent: {
     alignItems: "center",
     justifyContent: "center",

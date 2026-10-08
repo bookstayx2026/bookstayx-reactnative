@@ -1,4 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
+import { useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { Image } from "expo-image";
@@ -9,6 +10,7 @@ import { PressableScale } from "@/components/foundation";
 import { colors, fontFamilies, layout, radii, spacing } from "@/theme";
 import { useCustomerChrome } from "./CustomerChromeContext";
 import { useIsDesktop } from "@/hooks/use-window-class";
+import { focusRingProps, useFinePointer } from "@/hooks/use-fine-pointer";
 import { useAuth } from "@/components/auth";
 
 type IconButtonProps = {
@@ -19,22 +21,71 @@ type IconButtonProps = {
 };
 
 function IconButton({ label, badge, onPress, children }: IconButtonProps) {
+  const finePointer = useFinePointer();
+  const [hot, setHot] = useState(false);
   return (
     <PressableScale
       accessibilityLabel={label}
       accessibilityRole="button"
+      onHoverIn={() => setHot(true)}
+      onHoverOut={() => setHot(false)}
       onPress={onPress}
-      style={styles.iconButton}
+      style={styles.iconHit}
     >
-      <View style={styles.iconButtonContent}>
-        {children}
-        {badge ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{badge}</Text>
-          </View>
-        ) : null}
+      <View style={[styles.iconButton, finePointer && hot && styles.iconButtonHover]}>
+        <View style={styles.iconButtonContent}>
+          {children}
+          {badge ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </PressableScale>
+  );
+}
+
+function DesktopNavLink({
+  item,
+  active,
+  onPress,
+}: {
+  item: { label: string; href: string; highlight?: boolean };
+  active: boolean;
+  onPress: () => void;
+}) {
+  const finePointer = useFinePointer();
+  const [hot, setHot] = useState(false);
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      {...focusRingProps()}
+      hitSlop={{ top: 6, bottom: 6 }}
+      onHoverIn={() => setHot(true)}
+      onHoverOut={() => setHot(false)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.desktopNavLink,
+        active && styles.desktopNavLinkActive,
+        pressed && styles.desktopNavLinkPressed,
+        Platform.OS === "web" && { cursor: "pointer" },
+      ]}
+    >
+      {item.highlight ? <Sparkles size={13} color={colors.success} /> : null}
+      <Text
+        style={[
+          styles.desktopNavText,
+          active && styles.desktopNavTextActive,
+          item.highlight && styles.desktopNavTextHighlight,
+          finePointer && hot && !active && !item.highlight && styles.desktopNavTextHot,
+        ]}
+      >
+        {item.label}
+      </Text>
+      {active ? <View style={styles.desktopActiveIndicator} /> : null}
+    </Pressable>
   );
 }
 
@@ -92,33 +143,12 @@ export function CustomerTopNav() {
             {DESKTOP_NAV_ITEMS.map((item) => {
               const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
               return (
-                <Pressable
+                <DesktopNavLink
                   key={item.href}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: active }}
+                  item={item}
+                  active={active}
                   onPress={() => navigate(item.href)}
-                  style={({ pressed }) => [
-                    styles.desktopNavLink,
-                    active && styles.desktopNavLinkActive,
-                    pressed && styles.desktopNavLinkPressed,
-                    Platform.select({
-                      web: { cursor: "pointer", outlineStyle: "none" } as any,
-                      default: {},
-                    }),
-                  ]}
-                >
-                  {item.highlight ? <Sparkles size={13} color={colors.success} /> : null}
-                  <Text
-                    style={[
-                      styles.desktopNavText,
-                      active && styles.desktopNavTextActive,
-                      item.highlight && styles.desktopNavTextHighlight,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-                  {active ? <View style={styles.desktopActiveIndicator} /> : null}
-                </Pressable>
+                />
               );
             })}
           </View>
@@ -226,7 +256,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 10,
+    minHeight: 44,
+    paddingVertical: 12,
     paddingHorizontal: 8,
   },
   desktopNavLinkActive: {},
@@ -238,6 +269,17 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.sansMedium,
     fontSize: 14,
     letterSpacing: 0.2,
+    ...Platform.select({
+      web: {
+        transitionProperty: "color",
+        transitionDuration: "160ms",
+        transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+      } as object,
+      default: {},
+    }),
+  },
+  desktopNavTextHot: {
+    color: colors.text,
   },
   desktopNavTextActive: {
     color: colors.gold,
@@ -269,9 +311,8 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: {
         cursor: "pointer",
-        outlineStyle: "none",
         boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
-      } as any,
+      } as object,
       default: {},
     }),
   },
@@ -295,9 +336,8 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: {
         cursor: "pointer",
-        outlineStyle: "none",
         boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
-      } as any,
+      } as object,
       default: {},
     }),
   },
@@ -319,9 +359,8 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: {
         cursor: "pointer",
-        outlineStyle: "none",
         boxShadow: "0 2px 10px rgba(217, 165, 42, 0.28)",
-      } as any,
+      } as object,
       default: {},
     }),
   },
@@ -332,6 +371,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   actions: { flexDirection: "row", alignItems: "center", gap: 12 },
+  iconHit: {
+    width: 44,
+    height: 44,
+    margin: -3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   iconButton: {
     width: 38,
     height: 38,
@@ -341,9 +387,18 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.12)",
     overflow: "visible",
     ...Platform.select({
-      web: { cursor: "pointer", outlineStyle: "none" } as any,
+      web: {
+        cursor: "pointer",
+        transitionProperty: "border-color, background-color",
+        transitionDuration: "160ms",
+        transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+      } as object,
       default: {},
     }),
+  },
+  iconButtonHover: {
+    borderColor: "rgba(224, 184, 74, 0.55)",
+    backgroundColor: "rgba(224, 184, 74, 0.08)",
   },
   iconButtonContent: { flex: 1, alignItems: "center", justifyContent: "center" },
   badge: {
