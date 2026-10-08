@@ -82,6 +82,7 @@ export const motion = {
   smallMs: 180,
   standardMs: 240,
   drawerMs: 360,
+  easeOut: [0.23, 1, 0.32, 1] as const,
 } as const;
 
 export const layout = {
