@@ -1,0 +1,2692 @@
+const crypto = require("crypto");
+const axios = require("axios");
+const PaytmChecksum = require("paytmchecksum");
+const { query, pool } = require("../db");
+const { WhatsAppService } = require("../utils/whatsappService");
+const { assignTicketId } = require("../utils/ticketId");
+const { createCustomerNotification } = require("../services/notificationService");
+const {
+  BookingQuoteError,
+  createBookingQuote,
+} = require("../services/bookingQuoteService");
+
+async function getBookingTimeStrings(booking) {
+  let checkInTime = null,
+    checkOutTime = null;
+  if (booking.unit_id) {
+    try {
+      const r = await query(
+        `SELECT pu.check_in_time, pu.check_out_time,
+                p.check_in_time AS prop_check_in_time, p.check_out_time AS prop_check_out_time
+         FROM property_units pu
+         LEFT JOIN properties p ON (p.property_id = pu.property_id OR p.id::text = pu.property_id)
+         WHERE pu.id = $1`,
+        [booking.unit_id],
+      );
+      if (r.rows.length > 0) {
+        const row = r.rows[0];
+        checkInTime = row.check_in_time || row.prop_check_in_time;
+        checkOutTime = row.check_out_time || row.prop_check_out_time;
+      }
+    } catch (err) {
+      console.warn(
+        `[getBookingTimeStrings] Failed to fetch unit times for unit_id=${booking.unit_id}:`,
+        err.message,
+      );
+    }
+  }
+  if (!checkInTime && booking.property_id) {
+    try {
+      const pr = await query(
+        "SELECT check_in_time, check_out_time FROM properties WHERE property_id = $1 OR id::text = $1",
+        [String(booking.property_id)],
+      );
+      if (pr.rows.length > 0) {
+        checkInTime = checkInTime || pr.rows[0].check_in_time;
+        checkOutTime = checkOutTime || pr.rows[0].check_out_time;
+      }
+    } catch (err) {
+      console.warn(
+        `[getBookingTimeStrings] Failed to fetch property times for property_id=${booking.property_id}:`,
+        err.message,
+      );
+    }
+  }
+  const fmtDateOnly = (dt) => {
+    const d = new Date(dt);
+    const day = d.toLocaleDateString("en-GB", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+    });
+    const mon = d.toLocaleDateString("en-GB", {
+      timeZone: "Asia/Kolkata",
+      month: "short",
+    });
+    const yr = d.toLocaleDateString("en-GB", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+    });
+    return `${day} ${mon} ${yr}`;
+  };
+  const fmtFull = (dt) => {
+    const d = new Date(dt);
+    const datePart = fmtDateOnly(dt);
+    const timePart = d.toLocaleTimeString("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return `${datePart}, ${timePart}`;
+  };
+  const checkinStr = booking.checkin_datetime
+    ? checkInTime
+      ? `${fmtDateOnly(booking.checkin_datetime)}, ${checkInTime}`
+      : fmtFull(booking.checkin_datetime)
+    : "N/A";
+  const checkoutStr = booking.checkout_datetime
+    ? checkOutTime
+      ? `${fmtDateOnly(booking.checkout_datetime)}, ${checkOutTime}`
+      : fmtFull(booking.checkout_datetime)
+    : "N/A";
+  return { checkinStr, checkoutStr };
+}
+
+function getPaytmBaseUrl() {
+  const gatewayUrl = process.env.PAYTM_GATEWAY_URL || "";
+  if (
+    gatewayUrl.includes("securegw.paytm.in") &&
+    !gatewayUrl.includes("securegw-stage")
+  ) {
+    return "https://securegw.paytm.in";
+  }
+  return "https://securestage.paytmpayments.com";
+}
+
+async function processPaytmRefund(booking, refundAmount) {
+  try {
+    if (booking.payment_status !== "SUCCESS") {
+      console.log(
+        `[PaytmRefund] Skipping — payment_status is ${booking.payment_status}`,
+      );
+      return { skipped: true, reason: "no_successful_payment" };
+    }
+    if (!booking.transaction_id || !booking.order_id) {
+      console.log(
+        `[PaytmRefund] Skipping — missing transaction_id or order_id`,
+      );
+      return { skipped: true, reason: "missing_ids" };
+    }
+    if (booking.refund_status === "REFUND_SUCCESSFUL") {
+      console.log(`[PaytmRefund] Skipping — refund already completed`);
+      return { skipped: true, reason: "already_refunded" };
+    }
+
+    const mid = process.env.PAYTM_MID;
+    const merchantKey = process.env.PAYTM_MERCHANT_KEY;
+    if (!mid || !merchantKey) {
+      console.log("[PaytmRefund] Skipping — Paytm credentials not configured");
+      return { skipped: true, reason: "not_configured" };
+    }
+
+    const refundId = `REFUND_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const amount = parseFloat(refundAmount).toFixed(2);
+
+    const paytmBody = {
+      mid,
+      txnType: "REFUND",
+      orderId: booking.order_id,
+      txnId: booking.transaction_id,
+      refId: refundId,
+      refundAmount: amount,
+    };
+
+    const checksum = await PaytmChecksum.generateSignature(
+      JSON.stringify(paytmBody),
+      merchantKey,
+    );
+    const paytmRequest = { body: paytmBody, head: { signature: checksum } };
+
+    console.log(
+      `[PaytmRefund] Initiating refund for booking ${booking.booking_id}, amount ₹${amount}`,
+    );
+
+    const paytmResponse = await axios.post(
+      `${getPaytmBaseUrl()}/refund/apply`,
+      paytmRequest,
+      { headers: { "Content-Type": "application/json" } },
+    );
+
+    const responseBody = paytmResponse.data.body;
+    const refundResult = responseBody?.resultInfo;
+
+    if (
+      refundResult?.resultStatus === "TXN_SUCCESS" ||
+      refundResult?.resultStatus === "PENDING"
+    ) {
+      const refundStatus =
+        refundResult.resultStatus === "TXN_SUCCESS"
+          ? "REFUND_SUCCESSFUL"
+          : "REFUND_INITIATED";
+      await query(
+        `UPDATE bookings SET refund_id = $1, refund_status = $2, refund_amount = $3, updated_at = NOW() WHERE booking_id = $4`,
+        [refundId, refundStatus, amount, booking.booking_id],
+      );
+      console.log(
+        `[PaytmRefund] Success — status: ${refundStatus}, refundId: ${refundId}`,
+      );
+      return {
+        success: true,
+        refund_id: refundId,
+        refund_status: refundStatus,
+        amount,
+      };
+    } else {
+      await query(
+        `UPDATE bookings SET refund_status = 'REFUND_FAILED', updated_at = NOW() WHERE booking_id = $1`,
+        [booking.booking_id],
+      );
+      console.log(
+        `[PaytmRefund] Failed — resultStatus: ${refundResult?.resultStatus}, msg: ${refundResult?.resultMsg}`,
+      );
+      return { success: false, reason: refundResult?.resultMsg };
+    }
+  } catch (err) {
+    console.error(
+      `[PaytmRefund] Error for booking ${booking.booking_id}:`,
+      err.message,
+    );
+    return { success: false, reason: err.message };
+  }
+}
+
+const REFERRAL_RATES = {
+  owner: 0.25,
+  b2b: 0.22,
+  owners_b2b: 0.22,
+  public: 0.15,
+};
+
+function resolveCommissionTotal(booking) {
+  const total = parseFloat(booking.total_amount);
+  return total && total > 0 ? total : 0;
+}
+
+async function createInProcessCommission(booking) {
+  if (!booking.referral_code) return;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const refRes = await client.query(
+      `SELECT id FROM referral_users WHERE referral_code = $1 AND status = 'active'`,
+      [booking.referral_code],
+    );
+    if (refRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    const referrerId = refRes.rows[0].id;
+    const totalAmount = resolveCommissionTotal(booking);
+    if (totalAmount <= 0) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    const rate =
+      REFERRAL_RATES[(booking.referral_type || "").toLowerCase()] ||
+      REFERRAL_RATES.public;
+    const commissionAmount = Math.round(totalAmount * rate * 100) / 100;
+    const insertResult = await client.query(
+      `INSERT INTO referral_transactions
+         (referral_user_id, booking_id, amount, type, status, source)
+       VALUES ($1, $2, $3, 'earning', 'in_process', 'booking_confirm')
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [referrerId, booking.id, commissionAmount],
+    );
+    if (insertResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      console.log(
+        `[Commission] Duplicate skipped for booking ${booking.booking_id} — already exists`,
+      );
+      return;
+    }
+    await client.query(
+      `UPDATE bookings SET commission_status = 'IN_PROCESS', referrer_commission = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [commissionAmount, booking.id],
+    );
+    await client.query("COMMIT");
+    console.log(
+      `[Commission] In-process created for booking ${booking.booking_id} — referrer ₹${commissionAmount}`,
+    );
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function cancelInProcessCommission(bookingDbId) {
+  try {
+    await query(
+      `UPDATE referral_transactions
+       SET status = 'canceled', updated_at = NOW()
+       WHERE booking_id = $1 AND type = 'earning' AND status = 'in_process'`,
+      [bookingDbId],
+    );
+  } catch (err) {
+    console.error("[Commission] cancelInProcessCommission error:", err.message);
+  }
+}
+
+function getFrontendUrl(req) {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL;
+  const replitDomain =
+    process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN || "";
+  const domain = replitDomain.includes(",")
+    ? replitDomain.split(",")[0]
+    : replitDomain;
+  if (domain) return `https://${domain}`;
+  if (req) {
+    const host = req.get("x-forwarded-host") || req.get("host");
+    if (host) return `https://${host}`;
+  }
+  return "https://pawnahavencamp.com";
+}
+
+const VALID_TRANSITIONS = {
+  PAYMENT_PENDING: ["PAYMENT_SUCCESS", "PAYMENT_FAILED"],
+  PAYMENT_SUCCESS: [
+    "PENDING_OWNER_CONFIRMATION",
+    "BOOKING_REQUEST_SENT_TO_OWNER",
+  ],
+  PENDING_OWNER_CONFIRMATION: [
+    "CONFIRMED",
+    "CANCELLED_BY_OWNER",
+    "BOOKING_REQUEST_SENT_TO_OWNER",
+  ],
+  BOOKING_REQUEST_SENT_TO_OWNER: [
+    "OWNER_CONFIRMED",
+    "OWNER_CANCELLED",
+    "CONFIRMED",
+    "CANCELLED_BY_OWNER",
+  ],
+  OWNER_CONFIRMED: ["TICKET_GENERATED", "CONFIRMED"],
+  CONFIRMED: ["TICKET_GENERATED"],
+  OWNER_CANCELLED: [
+    "REFUND_REQUIRED",
+    "REFUND_INITIATED",
+    "CANCELLED_NO_REFUND",
+    "CANCELLED_BY_OWNER",
+  ],
+  CANCELLED_BY_OWNER: [
+    "REFUND_REQUIRED",
+    "REFUND_INITIATED",
+    "CANCELLED_NO_REFUND",
+  ],
+  TICKET_GENERATED: [],
+  REFUND_REQUIRED: ["REFUND_INITIATED", "REFUND_FAILED"],
+  REFUND_INITIATED: [],
+  REFUND_FAILED: [],
+  CANCELLED_NO_REFUND: [],
+  PAYMENT_FAILED: [],
+};
+
+function generateBookingId() {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase();
+  return `PHC-${timestamp}-${random}`;
+}
+
+function generateActionToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function isValidTransition(currentStatus, newStatus) {
+  const allowedTransitions = VALID_TRANSITIONS[currentStatus] || [];
+  return allowedTransitions.includes(newStatus);
+}
+
+function validateBookingRequest(req) {
+  if (!req.property_id || !req.property_name || !req.property_type) {
+    return { valid: false, error: "Missing required property fields" };
+  }
+
+  if (!req.guest_name || !req.guest_phone) {
+    return { valid: false, error: "Missing required guest information" };
+  }
+
+  if (!req.owner_phone || !req.admin_phone) {
+    return { valid: false, error: "Missing required contact information" };
+  }
+
+  if (!req.checkin_datetime || !req.checkout_datetime) {
+    return { valid: false, error: "Missing required booking dates" };
+  }
+
+  if (!req.advance_amount || req.advance_amount <= 0) {
+    return { valid: false, error: "Advance amount must be greater than 0" };
+  }
+
+  const checkin = new Date(req.checkin_datetime);
+  const checkout = new Date(req.checkout_datetime);
+  if (checkout <= checkin) {
+    return { valid: false, error: "Checkout must be after checkin" };
+  }
+
+  if (req.property_type === "VILLA") {
+    if (!req.persons || !req.max_capacity) {
+      return {
+        valid: false,
+        error: "VILLA bookings require persons and max_capacity",
+      };
+    }
+    if (req.persons <= 0 || req.persons > req.max_capacity) {
+      return {
+        valid: false,
+        error: "Persons must be between 1 and max_capacity",
+      };
+    }
+  } else if (
+    req.property_type === "CAMPING" ||
+    req.property_type === "COTTAGE"
+  ) {
+    if (
+      req.veg_guest_count === undefined ||
+      req.nonveg_guest_count === undefined
+    ) {
+      return {
+        valid: false,
+        error: "CAMPING/COTTAGE bookings require veg and nonveg guest counts",
+      };
+    }
+    if (req.veg_guest_count + req.nonveg_guest_count <= 0) {
+      return {
+        valid: false,
+        error: "Total guest count must be greater than 0",
+      };
+    }
+  } else {
+    return { valid: false, error: "Invalid property_type" };
+  }
+
+  return { valid: true };
+}
+
+const quoteBooking = async (req, res) => {
+  try {
+    const quote = await createBookingQuote(pool, req.body || {});
+    return res.json({ success: true, quote });
+  } catch (error) {
+    if (error instanceof BookingQuoteError) {
+      return res.status(error.status).json({ success: false, code: error.code, message: error.message });
+    }
+    console.error("Error creating booking quote:", error);
+    return res.status(500).json({ success: false, message: "Unable to calculate this stay." });
+  }
+};
+
+const initiateBooking = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const bookingRequest = req.body || {};
+    await client.query("BEGIN");
+
+    // Extract unit IDs to lock deterministically in ascending numerical order
+    const rawReqItems = Array.isArray(bookingRequest.accommodationItems) && bookingRequest.accommodationItems.length > 0
+      ? bookingRequest.accommodationItems
+      : Array.isArray(bookingRequest.items) && bookingRequest.items.length > 0
+      ? bookingRequest.items
+      : bookingRequest.unitId || bookingRequest.unit_id
+      ? [{ unitId: bookingRequest.unitId || bookingRequest.unit_id }]
+      : [];
+
+    const unitIdsToLock = [
+      ...new Set(
+        rawReqItems
+          .map((it) => it.unitId ?? it.unit_id)
+          .filter((id) => id != null && !Number.isNaN(Number(id)))
+          .map((id) => Number(id))
+      ),
+    ].sort((a, b) => a - b);
+
+    if (unitIdsToLock.length > 0) {
+      for (const uId of unitIdsToLock) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`unit:${uId}`]);
+      }
+    } else {
+      const reqPropId = bookingRequest.propertyId || bookingRequest.property_id;
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`property:${reqPropId}`]);
+    }
+
+    const quote = await createBookingQuote(client, bookingRequest);
+    let customerResult = await client.query(
+      "SELECT id, full_name, mobile, email FROM customers WHERE id = $1",
+      [req.user.id],
+    );
+    if (!customerResult.rows.length) {
+      const guestMobile = String(bookingRequest.guestPhone || bookingRequest.mobile || req.user.mobile || '9999999991').replace(/\D/g, '').slice(-10);
+      const guestName = String(bookingRequest.guestName || req.user.name || 'BookStayX Guest').trim();
+      const guestEmail = String(bookingRequest.email || req.user.email || '').trim() || null;
+      customerResult = await client.query(
+        `INSERT INTO customers (mobile, full_name, email, last_login)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (mobile) DO UPDATE SET
+           full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), customers.full_name),
+           email = COALESCE(EXCLUDED.email, customers.email),
+           last_login = NOW()
+         RETURNING id, full_name, mobile, email`,
+        [guestMobile, guestName, guestEmail]
+      );
+    }
+    const customer = customerResult.rows[0];
+    const referralCode = bookingRequest.referralCode || bookingRequest.referral_code;
+    let referralDiscount = 0;
+    let referralType = null;
+    let normalizedReferralCode = null;
+    if (referralCode) {
+      normalizedReferralCode = String(referralCode).trim().toUpperCase();
+      const refResult = await client.query(
+        "SELECT referral_type FROM referral_users WHERE referral_code = $1 AND status = 'active'",
+        [normalizedReferralCode],
+      );
+      if (refResult.rows.length) referralType = refResult.rows[0].referral_type || "public";
+      else normalizedReferralCode = null;
+    }
+
+    const bookingId = generateBookingId();
+    const ownerPhone = String(quote.property.ownerPhone || process.env.ADMIN_PHONE || '9999999999').trim();
+    const adminPhone = String(process.env.ADMIN_PHONE || process.env.BOOKING_ADMIN_PHONE || quote.property.ownerPhone || '9999999999').trim();
+    const totalGuests = Number(quote.persons || 1);
+    const maleGuestCount = bookingRequest.maleGuestCount !== undefined && bookingRequest.maleGuestCount !== null
+      ? Number(bookingRequest.maleGuestCount)
+      : totalGuests;
+    const femaleGuestCount = bookingRequest.femaleGuestCount !== undefined && bookingRequest.femaleGuestCount !== null
+      ? Number(bookingRequest.femaleGuestCount)
+      : 0;
+    const vegGuestCount = bookingRequest.vegGuestCount !== undefined && bookingRequest.vegGuestCount !== null
+      ? Number(bookingRequest.vegGuestCount)
+      : totalGuests;
+    const nonVegGuestCount = bookingRequest.nonVegGuestCount !== undefined && bookingRequest.nonVegGuestCount !== null
+      ? Number(bookingRequest.nonVegGuestCount)
+      : 0;
+
+    if (
+      !Number.isInteger(maleGuestCount) || maleGuestCount < 0 ||
+      !Number.isInteger(femaleGuestCount) || femaleGuestCount < 0 ||
+      (maleGuestCount + femaleGuestCount !== totalGuests)
+    ) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_DEMOGRAPHICS",
+        message: `Male (${maleGuestCount}) and Female (${femaleGuestCount}) guest breakdown must equal total guests (${totalGuests}).`,
+      });
+    }
+
+    if (
+      bookingRequest.vegGuestCount !== undefined ||
+      bookingRequest.nonVegGuestCount !== undefined
+    ) {
+      if (
+        !Number.isInteger(vegGuestCount) || vegGuestCount < 0 ||
+        !Number.isInteger(nonVegGuestCount) || nonVegGuestCount < 0 ||
+        (vegGuestCount + nonVegGuestCount !== totalGuests)
+      ) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          success: false,
+          code: "INVALID_MEAL_PREFERENCE",
+          message: `Veg (${vegGuestCount}) and Non-Veg (${nonVegGuestCount}) guest breakdown must equal total guests (${totalGuests}).`,
+        });
+      }
+    }
+
+    const requestedUnitQuantity = Math.max(1, Number(quote.unitQuantity || 1));
+
+    const result = await client.query(
+      `INSERT INTO bookings (
+        booking_id, customer_id, property_id, property_name, property_type,
+        guest_name, guest_phone, owner_phone, admin_phone,
+        checkin_datetime, checkout_datetime, advance_amount,
+        total_amount, persons, max_capacity,
+        veg_guest_count, nonveg_guest_count, male_guest_count, female_guest_count,
+        owner_name, map_link, property_address,
+        referral_code, referral_discount, referral_type, unit_id, unit_quantity,
+        payment_status, booking_status, soft_lock_expires_at
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
+        'INITIATED','PAYMENT_PENDING',NOW() + INTERVAL '15 minutes'
+      ) RETURNING *`,
+      [
+        bookingId,
+        customer.id,
+        quote.property.propertyId,
+        quote.property.name,
+        quote.property.type,
+        String(bookingRequest.guestName || bookingRequest.guest_name || customer.full_name).trim(),
+        customer.mobile || '9999999999',
+        ownerPhone,
+        adminPhone,
+        quote.checkIn,
+        quote.checkOut,
+        quote.advanceAmount,
+        quote.totalAmount,
+        quote.persons,
+        quote.maxCapacity,
+        vegGuestCount,
+        nonVegGuestCount,
+        maleGuestCount,
+        femaleGuestCount,
+        quote.property.ownerName,
+        quote.property.mapLink,
+        quote.property.location,
+        normalizedReferralCode,
+        referralDiscount,
+        referralType,
+        quote.unit?.id || null,
+        requestedUnitQuantity,
+      ],
+    );
+    const createdBooking = result.rows[0];
+    createdBooking.ticket_id = await assignTicketId(client, createdBooking.id, bookingId);
+
+    // Insert child items into booking_items
+    if (Array.isArray(quote.items) && quote.items.length > 0) {
+      for (const item of quote.items) {
+        if (item.unitId) {
+          await client.query(
+            `INSERT INTO booking_items (
+              booking_id, property_id, unit_id, persons, unit_quantity,
+              price_per_unit_night, subtotal, pricing_snapshot
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              createdBooking.id,
+              quote.property.propertyId,
+              item.unitId,
+              item.persons,
+              item.requiredUnits,
+              item.nightlyRates?.[0]?.price || 0,
+              item.subtotal,
+              JSON.stringify({ nightlyRates: item.nightlyRates }),
+            ]
+          );
+        }
+      }
+    }
+    createdBooking.items = quote.items;
+
+    await client.query("COMMIT");
+    if (customer && customer.id) {
+      createCustomerNotification(
+        customer.id,
+        "Booking Placed",
+        `Your stay request at ${quote.property.name} (${createdBooking.booking_id}) has been placed.`,
+        "booking",
+        { booking_id: createdBooking.booking_id }
+      ).catch(() => undefined);
+    }
+
+    try {
+      const ownerQuery = await client.query(
+        `SELECT o.id AS owner_id, p.id AS property_db_id
+         FROM properties p
+         LEFT JOIN owners o ON o.property_id = p.property_id
+         WHERE p.property_id = $1 OR p.id::text = $1
+         LIMIT 1`,
+        [String(quote.property.propertyId)]
+      );
+      if (ownerQuery.rows.length && ownerQuery.rows[0].owner_id) {
+        await client.query(
+          `INSERT INTO owner_notifications (property_id, owner_id, type, title, message, reference_id)
+           VALUES ($1, $2, 'new_booking', $3, $4, $5)`,
+          [
+            ownerQuery.rows[0].property_db_id,
+            ownerQuery.rows[0].owner_id,
+            `New Booking #${createdBooking.booking_id}`,
+            `${createdBooking.guest_name} booked ${createdBooking.property_name} for ${createdBooking.persons} guests.`,
+            createdBooking.booking_id,
+          ]
+        );
+      }
+    } catch (notifErr) {
+      console.warn("Owner notification insert skipped:", notifErr.message);
+    }
+
+    return res.status(201).json({
+      success: true,
+      booking: createdBooking,
+      quote,
+      message: "Booking initiated successfully",
+    });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    if (error instanceof BookingQuoteError) {
+      return res.status(error.status).json({ success: false, code: error.code, message: error.message });
+    }
+    console.error("Error initiating booking:", error);
+    return res.status(500).json({ success: false, message: "Unable to create this booking." });
+  } finally {
+    client.release();
+  }
+};
+
+const getBooking = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    if (!bookingId) {
+      return res.status(400).json({ error: "Booking ID is required" });
+    }
+
+    const result = await query(
+      `SELECT * FROM bookings
+        WHERE booking_id = $1
+          AND ($2::text <> 'customer' OR customer_id = $3)`,
+      [bookingId, req.user.role, req.user.id],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const booking = result.rows[0];
+    const itemsRes = await query(
+      `SELECT bi.*, pu.name AS unit_name, pu.accommodation_type
+         FROM booking_items bi
+         JOIN property_units pu ON pu.id = bi.unit_id
+        WHERE bi.booking_id = $1
+        ORDER BY bi.id`,
+      [booking.id]
+    );
+    booking.items = itemsRes.rows;
+
+    return res.status(200).json({
+      success: true,
+      booking,
+    });
+  } catch (error) {
+    console.error("Error fetching booking:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+};
+
+const getCustomerBookings = async (req, res) => {
+  try {
+    const userRole = req.user?.role || 'customer';
+    const userId = req.user?.id;
+    const userMobile = req.user?.mobile ? String(req.user.mobile).replace(/\D/g, '').slice(-10) : null;
+
+    const result = await query(
+      `SELECT b.*, p.slug, p.location,
+              COALESCE(pu.check_in_time, p.check_in_time, '2:00 PM') AS check_in_time,
+              COALESCE(pu.check_out_time, p.check_out_time, '11:00 AM') AS check_out_time,
+              COALESCE((
+                SELECT pi.image_url
+                  FROM property_images pi
+                 WHERE pi.property_id = p.id
+                 ORDER BY pi.display_order, pi.id
+                 LIMIT 1
+              ), '') AS property_image,
+              pu.name AS unit_name,
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                  'id', bi.id,
+                  'unit_id', bi.unit_id,
+                  'unit_name', COALESCE(pu_item.name, b.property_name),
+                  'accommodation_type', COALESCE(pu_item.accommodation_type, 'Stay'),
+                  'persons', bi.persons,
+                  'unit_quantity', bi.unit_quantity,
+                  'subtotal', bi.subtotal
+                ))
+                FROM booking_items bi
+                LEFT JOIN property_units pu_item ON pu_item.id = bi.unit_id
+                WHERE bi.booking_id = b.id
+              ), '[]'::json) AS items
+         FROM bookings b
+         LEFT JOIN properties p
+           ON p.property_id = b.property_id OR p.slug = b.property_id OR p.id::text = b.property_id
+         LEFT JOIN property_units pu ON pu.id = b.unit_id
+        WHERE (
+          ($1 = 'customer' AND b.customer_id = $2)
+          OR ($1 <> 'customer' AND (b.customer_id = $2 OR ($3::text IS NOT NULL AND b.guest_phone LIKE '%' || $3)))
+        )
+          AND b.booking_status <> 'DELETED'
+        ORDER BY b.created_at DESC`,
+      [userRole, userId, userMobile],
+    );
+    return res.json({ success: true, bookings: result.rows });
+  } catch (error) {
+    console.error("Error fetching customer bookings:", error);
+    return res.status(500).json({ success: false, message: "Unable to load bookings." });
+  }
+};
+
+const updateBookingStatus = async (req, res) => {
+  try {
+    const {
+      booking_id,
+      booking_status,
+      payment_status,
+      order_id,
+      transaction_id,
+    } = req.body;
+
+    if (!booking_id) {
+      return res.status(400).json({ error: "Booking ID is required" });
+    }
+
+    const currentResult = await query(
+      "SELECT booking_status, payment_status FROM bookings WHERE booking_id = $1",
+      [booking_id],
+    );
+
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const currentBooking = currentResult.rows[0];
+
+    if (booking_status) {
+      const currentStatus = currentBooking.booking_status;
+
+      if (currentStatus === booking_status) {
+        return res.status(200).json({
+          success: true,
+          message: "Booking already in requested status",
+          booking_status: currentStatus,
+        });
+      }
+
+      if (!isValidTransition(currentStatus, booking_status)) {
+        return res.status(400).json({
+          error: "Invalid state transition",
+          current_status: currentStatus,
+          requested_status: booking_status,
+          allowed_transitions: VALID_TRANSITIONS[currentStatus],
+        });
+      }
+    }
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (booking_status) {
+      updates.push(`booking_status = $${paramCount}`);
+      values.push(booking_status);
+      paramCount++;
+    }
+
+    if (payment_status) {
+      updates.push(`payment_status = $${paramCount}`);
+      values.push(payment_status);
+      paramCount++;
+    }
+
+    if (order_id) {
+      updates.push(`order_id = $${paramCount}`);
+      values.push(order_id);
+      paramCount++;
+    }
+
+    if (transaction_id) {
+      updates.push(`transaction_id = $${paramCount}`);
+      values.push(transaction_id);
+      paramCount++;
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    values.push(booking_id);
+    const updateQuery = `UPDATE bookings SET ${updates.join(", ")} WHERE booking_id = $${paramCount} RETURNING *`;
+
+    const result = await query(updateQuery, values);
+
+    return res.status(200).json({
+      success: true,
+      booking: result.rows[0],
+      message: "Booking status updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating booking status:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+};
+
+const processConfirmedBooking = async (req, res) => {
+  try {
+    const { booking_id } = req.body;
+
+    if (!booking_id) {
+      return res.status(400).json({ error: "booking_id is required" });
+    }
+
+    const result = await query("SELECT * FROM bookings WHERE booking_id = $1", [
+      booking_id,
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const booking = result.rows[0];
+
+    if (booking.booking_status !== "OWNER_CONFIRMED") {
+      return res.status(400).json({
+        error: "Invalid status",
+        current_status: booking.booking_status,
+        message: "Booking must be in OWNER_CONFIRMED status",
+      });
+    }
+
+    await query(
+      "UPDATE bookings SET booking_status = 'TICKET_GENERATED' WHERE booking_id = $1",
+      [booking_id],
+    );
+
+    const whatsapp = new WhatsAppService();
+    const frontendUrl = getFrontendUrl(req);
+    const ticketUrl = `${frontendUrl}/ticket?booking_id=${booking_id}`;
+
+    const dueAmount = (booking.total_amount || 0) - booking.advance_amount;
+    const { checkinStr: _checkinStr, checkoutStr: _checkoutStr } =
+      await getBookingTimeStrings(booking);
+
+    const customerMessage = `🎉 Booking Confirmed!\n\nBooking ID: ${booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${_checkinStr}\nCheck-out: ${_checkoutStr}\nAdvance Paid: ₹${booking.advance_amount}\nDue at Property: ₹${dueAmount}\n\nView your e-ticket:\n${ticketUrl}`;
+    await whatsapp.sendTextMessage(booking.guest_phone, customerMessage);
+
+    const adminMessage = `✅ Booking Confirmed & Ticket Generated\n\nBooking ID: ${booking_id}\nProperty: ${booking.property_name}\nGuest: ${booking.guest_name} (${booking.guest_phone})\nOwner: ${booking.owner_phone}\nCheck-in: ${_checkinStr}\nCheck-out: ${_checkoutStr}\nAdvance: ₹${booking.advance_amount}\nDue: ₹${dueAmount}\n\nE-ticket: ${ticketUrl}`;
+    await whatsapp.sendTextMessage(booking.admin_phone, adminMessage);
+
+    console.log("E-ticket activated for booking:", booking_id);
+
+    return res.status(200).json({
+      success: true,
+      booking_id,
+      status: "TICKET_GENERATED",
+      ticket_url: ticketUrl,
+    });
+  } catch (error) {
+    console.error("Error processing confirmed booking:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+};
+
+const processCancelledBooking = async (req, res) => {
+  try {
+    const { booking_id } = req.body;
+
+    if (!booking_id) {
+      return res.status(400).json({ error: "booking_id is required" });
+    }
+
+    const result = await query("SELECT * FROM bookings WHERE booking_id = $1", [
+      booking_id,
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const booking = result.rows[0];
+
+    if (booking.booking_status !== "OWNER_CANCELLED") {
+      return res.status(400).json({
+        error: "Invalid status",
+        current_status: booking.booking_status,
+        message: "Booking must be in OWNER_CANCELLED status",
+      });
+    }
+
+    if (booking.refund_id) {
+      console.log("Refund already processed for booking:", booking_id);
+      return res.status(200).json({
+        success: true,
+        message: "Refund already processed",
+        refund_id: booking.refund_id,
+      });
+    }
+
+    const whatsapp = new WhatsAppService();
+
+    if (booking.payment_status === "SUCCESS") {
+      const refundId = `MOCK_REFUND_${Date.now()}`;
+
+      await query(
+        "UPDATE bookings SET booking_status = 'REFUND_INITIATED', refund_id = $1 WHERE booking_id = $2",
+        [refundId, booking_id],
+      );
+
+      const customerMessage = `❌ Booking Cancelled\n\nYour booking has been cancelled by the property owner.\n\nBooking ID: ${booking_id}\nRefund Amount: ₹${booking.advance_amount}\n\nYour refund has been initiated and will be credited to your payment account within 5-7 business days.`;
+      await whatsapp.sendTextMessage(booking.guest_phone, customerMessage);
+
+      const adminMessage = `❌ Booking Cancelled - Refund Initiated\n\nBooking ID: ${booking_id}\nProperty: ${booking.property_name}\nGuest: ${booking.guest_name} (${booking.guest_phone})\nRefund Amount: ₹${booking.advance_amount}\nRefund ID: ${refundId}\n\nStatus: Refund initiated successfully`;
+      await whatsapp.sendTextMessage(booking.admin_phone, adminMessage);
+
+      console.log("Refund initiated for booking:", booking_id);
+
+      return res.status(200).json({
+        success: true,
+        booking_id,
+        status: "REFUND_INITIATED",
+        refund_id: refundId,
+      });
+    } else {
+      await query(
+        "UPDATE bookings SET booking_status = 'CANCELLED_NO_REFUND' WHERE booking_id = $1",
+        [booking_id],
+      );
+
+      const customerMessage = `❌ Booking Cancelled\n\nYour booking has been cancelled.\n\nBooking ID: ${booking_id}\n\nNo payment was processed, so no refund is needed.`;
+      await whatsapp.sendTextMessage(booking.guest_phone, customerMessage);
+
+      const adminMessage = `❌ Booking Cancelled - No Refund Required\n\nBooking ID: ${booking_id}\nProperty: ${booking.property_name}\nGuest: ${booking.guest_name}\n\nPayment Status: ${booking.payment_status}\nNo refund required.`;
+      await whatsapp.sendTextMessage(booking.admin_phone, adminMessage);
+
+      return res.status(200).json({
+        success: true,
+        booking_id,
+        status: "CANCELLED_NO_REFUND",
+        message: "No refund required - payment was not successful",
+      });
+    }
+  } catch (error) {
+    console.error("Error processing cancelled booking:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+};
+
+const getLedgerEntries = async (req, res) => {
+  try {
+    const { property_id, unit_id, date } = req.query;
+    const hasUnit = unit_id && unit_id !== "null" && unit_id !== "undefined";
+
+    let ledgerQuery = `
+      SELECT le.id, le.customer_name, le.persons, le.check_in, le.check_out,
+             le.payment_mode, le.amount, le.unit_id, le.booking_id, le.note, le.status,
+             CASE WHEN le.booking_id IS NOT NULL THEN 'website' ELSE 'offline' END AS source,
+             COALESCE(b2.booking_status, 'ACTIVE') AS booking_status
+      FROM ledger_entries le
+      JOIN properties p ON (p.id::text = le.property_id OR p.property_id = le.property_id)
+      LEFT JOIN bookings b2 ON b2.booking_id = le.booking_id
+      WHERE (p.id::text = $1 OR p.property_id = $1)
+      AND le.check_in <= $2 AND le.check_out > $2
+    `;
+    let ledgerParams = [property_id, date];
+    if (hasUnit) {
+      ledgerQuery += " AND le.unit_id = $3";
+      ledgerParams.push(unit_id);
+    }
+
+    let bookingsQuery = `
+      SELECT b.id, b.guest_name AS customer_name,
+             COALESCE(b.persons, b.veg_guest_count + b.nonveg_guest_count, 1) AS persons,
+             b.checkin_datetime::date AS check_in, b.checkout_datetime::date AS check_out,
+             b.payment_method AS payment_mode, b.advance_amount AS amount,
+             b.unit_id, b.booking_id, 'website' AS source, b.booking_status
+      FROM bookings b
+      JOIN properties p ON (p.id::text = b.property_id OR p.property_id = b.property_id)
+      WHERE (p.id::text = $1 OR p.property_id = $1)
+      AND b.booking_status IN ('TICKET_GENERATED', 'CANCELLED', 'DELETED')
+      AND b.checkin_datetime::date <= $2 AND b.checkout_datetime::date > $2
+      AND NOT EXISTS (
+        SELECT 1 FROM ledger_entries le2
+        WHERE le2.booking_id = b.booking_id
+      )
+    `;
+    let bookingsParams = [property_id, date];
+    if (hasUnit) {
+      bookingsQuery += " AND b.unit_id = $3";
+      bookingsParams.push(unit_id);
+    }
+
+    const [ledgerResult, bookingsResult] = await Promise.all([
+      query(ledgerQuery, ledgerParams),
+      query(bookingsQuery, bookingsParams),
+    ]);
+
+    const combined = [...ledgerResult.rows, ...bookingsResult.rows].sort(
+      (a, b) => new Date(a.check_in) - new Date(b.check_in),
+    );
+
+    res.json({ success: true, data: combined });
+  } catch (error) {
+    console.error("Error fetching ledger entries:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const addLedgerEntry = async (req, res) => {
+  try {
+    const {
+      property_id,
+      unit_id,
+      customer_name,
+      persons,
+      check_in,
+      check_out,
+      payment_mode,
+      amount,
+    } = req.body;
+
+    if (!persons || persons < 1) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Persons must be at least 1" });
+    }
+
+    // Resolve property and check capacity
+    let totalCapacity = 0;
+    let isVilla = false;
+    if (unit_id) {
+      const unitResult = await query(
+        "SELECT total_persons FROM property_units WHERE id = $1",
+        [unit_id],
+      );
+      if (unitResult.rows.length === 0)
+        return res
+          .status(404)
+          .json({ success: false, message: "Unit not found" });
+      totalCapacity = unitResult.rows[0].total_persons;
+    } else {
+      const propResult = await query(
+        "SELECT id, max_capacity, category FROM properties WHERE id::text = $1 OR property_id = $1",
+        [property_id],
+      );
+      if (propResult.rows.length === 0)
+        return res
+          .status(404)
+          .json({ success: false, message: "Property not found" });
+      totalCapacity = propResult.rows[0].max_capacity || 0;
+      isVilla = propResult.rows[0].category === "villa";
+    }
+
+    // Validate capacity for each date in range
+    const dates = [];
+    let currentDate = new Date(check_in);
+    const endDate = new Date(check_out);
+    while (currentDate < endDate) {
+      dates.push(currentDate.toISOString().split("T")[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    for (const dateStr of dates) {
+      if (isVilla) {
+        // Villa: reject if any entry already exists for this date
+        const existingVilla = unit_id
+          ? await query(
+              "SELECT COUNT(*) as cnt FROM ledger_entries WHERE unit_id = $1 AND check_in <= $2 AND check_out > $2",
+              [unit_id, dateStr],
+            )
+          : await query(
+              `SELECT COUNT(*) as cnt FROM ledger_entries le JOIN properties p ON (p.id::text = le.property_id OR p.property_id = le.property_id) WHERE (p.id::text = $1 OR p.property_id = $1) AND le.unit_id IS NULL AND le.check_in <= $2 AND le.check_out > $2`,
+              [property_id, dateStr],
+            );
+        if (parseInt(existingVilla.rows[0].cnt) > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Villa is already booked for ${dateStr}`,
+          });
+        }
+      } else {
+        // Camping: check persons capacity
+        const existingQuery = unit_id
+          ? await query(
+              "SELECT COALESCE(SUM(persons), 0) as occupied FROM ledger_entries WHERE unit_id = $1 AND check_in <= $2 AND check_out > $2",
+              [unit_id, dateStr],
+            )
+          : await query(
+              `SELECT COALESCE(SUM(persons), 0) as occupied FROM ledger_entries le JOIN properties p ON (p.id::text = le.property_id OR p.property_id = le.property_id) WHERE (p.id::text = $1 OR p.property_id = $1) AND le.unit_id IS NULL AND le.check_in <= $2 AND le.check_out > $2`,
+              [property_id, dateStr],
+            );
+        const occupied = parseInt(existingQuery.rows[0].occupied) || 0;
+        if (persons > totalCapacity - occupied) {
+          return res.status(400).json({
+            success: false,
+            message: `Persons (${persons}) exceeds available capacity (${totalCapacity - occupied}) on ${dateStr}`,
+          });
+        }
+      }
+    }
+
+    // 3. Insert the ledger entry
+    const result = await query(
+      `INSERT INTO ledger_entries 
+       (property_id, unit_id, customer_name, persons, check_in, check_out, payment_mode, amount) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [
+        property_id,
+        unit_id,
+        customer_name,
+        persons,
+        check_in,
+        check_out,
+        payment_mode,
+        amount,
+      ],
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error("Error adding ledger entry:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const updateLedgerEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      customer_name,
+      persons,
+      check_in,
+      check_out,
+      payment_mode,
+      amount,
+    } = req.body;
+
+    if (!persons || persons < 1) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Persons must be at least 1" });
+    }
+
+    const oldEntry = await query("SELECT * FROM ledger_entries WHERE id = $1", [
+      id,
+    ]);
+    if (oldEntry.rows.length === 0)
+      return res
+        .status(404)
+        .json({ success: false, message: "Entry not found" });
+
+    const old = oldEntry.rows[0];
+
+    // Validate against capacity (excluding current entry)
+    let totalCapacity = 0;
+    let isVilla = false;
+    if (old.unit_id) {
+      const unitResult = await query(
+        "SELECT total_persons FROM property_units WHERE id = $1",
+        [old.unit_id],
+      );
+      totalCapacity = unitResult.rows[0]?.total_persons || 0;
+    } else {
+      const propResult = await query(
+        "SELECT id, max_capacity, category FROM properties WHERE id::text = $1 OR property_id = $1",
+        [old.property_id],
+      );
+      totalCapacity = propResult.rows[0]?.max_capacity || 0;
+      isVilla = propResult.rows[0]?.category === "villa";
+    }
+
+    // Validate each date in the new range
+    let valCurrent = new Date(check_in);
+    const valEnd = new Date(check_out);
+    while (valCurrent < valEnd) {
+      const dateStr = valCurrent.toISOString().split("T")[0];
+      if (isVilla) {
+        const existingVilla = old.unit_id
+          ? await query(
+              "SELECT COUNT(*) as cnt FROM ledger_entries WHERE unit_id = $1 AND check_in <= $2 AND check_out > $2 AND id != $3",
+              [old.unit_id, dateStr, id],
+            )
+          : await query(
+              `SELECT COUNT(*) as cnt FROM ledger_entries le JOIN properties p ON (p.id::text = le.property_id OR p.property_id = le.property_id) WHERE (p.id::text = $1 OR p.property_id = $1) AND le.unit_id IS NULL AND le.check_in <= $2 AND le.check_out > $2 AND le.id != $3`,
+              [old.property_id, dateStr, id],
+            );
+        if (parseInt(existingVilla.rows[0].cnt) > 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Villa is already booked for ${dateStr}`,
+          });
+        }
+      } else {
+        const existingQuery = old.unit_id
+          ? await query(
+              "SELECT COALESCE(SUM(persons), 0) as occupied FROM ledger_entries WHERE unit_id = $1 AND check_in <= $2 AND check_out > $2 AND id != $3",
+              [old.unit_id, dateStr, id],
+            )
+          : await query(
+              `SELECT COALESCE(SUM(persons), 0) as occupied FROM ledger_entries le JOIN properties p ON (p.id::text = le.property_id OR p.property_id = le.property_id) WHERE (p.id::text = $1 OR p.property_id = $1) AND le.unit_id IS NULL AND le.check_in <= $2 AND le.check_out > $2 AND le.id != $3`,
+              [old.property_id, dateStr, id],
+            );
+        const occupied = parseInt(existingQuery.rows[0].occupied) || 0;
+        if (persons > totalCapacity - occupied) {
+          return res.status(400).json({
+            success: false,
+            message: `Persons (${persons}) exceeds available capacity (${totalCapacity - occupied}) on ${dateStr}`,
+          });
+        }
+      }
+      valCurrent.setDate(valCurrent.getDate() + 1);
+    }
+
+    const result = await query(
+      `UPDATE ledger_entries 
+       SET customer_name = $1, persons = $2, check_in = $3, check_out = $4, payment_mode = $5, amount = $6
+       WHERE id = $7 RETURNING *`,
+      [customer_name, persons, check_in, check_out, payment_mode, amount, id],
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error("Error updating ledger entry:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const deleteLedgerEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const entry = await query("SELECT * FROM ledger_entries WHERE id = $1", [
+      id,
+    ]);
+    if (entry.rows.length === 0)
+      return res
+        .status(404)
+        .json({ success: false, message: "Entry not found" });
+
+    const old = entry.rows[0];
+
+    // Restore availability
+    if (old.property_id && !old.unit_id) {
+      // Villa: lookup property category and restore availability_calendar
+      const propRes = await query(
+        `SELECT id, category FROM properties WHERE property_id = $1 OR id::text = $1 LIMIT 1`,
+        [old.property_id],
+      );
+      if (propRes.rows.length > 0 && propRes.rows[0].category === "villa") {
+        const propertyDbId = propRes.rows[0].id;
+        let current = new Date(old.check_in);
+        const end = new Date(old.check_out);
+        while (current < end) {
+          await query(
+            "UPDATE availability_calendar SET is_booked = false, updated_at = NOW() WHERE property_id = $1 AND date = $2",
+            [propertyDbId, current.toISOString().split("T")[0]],
+          );
+          current.setDate(current.getDate() + 1);
+        }
+        console.log(
+          `[DeleteLedger] Restored villa availability_calendar for property ${old.property_id}`,
+        );
+      }
+    }
+
+    await query("UPDATE ledger_entries SET status = 'deleted' WHERE id = $1", [
+      id,
+    ]);
+
+    if (old.booking_id) {
+      await query(
+        "UPDATE bookings SET booking_status = 'DELETED', updated_at = NOW() WHERE booking_id = $1 AND booking_status NOT IN ('CANCELLED', 'DELETED')",
+        [old.booking_id],
+      );
+      console.log(`[DeleteLedger] Marked booking ${old.booking_id} as DELETED`);
+    }
+
+    res.json({ success: true, message: "Entry deleted" });
+  } catch (error) {
+    console.error("Error deleting ledger entry:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const getMonthlyLedger = async (req, res) => {
+  try {
+    const { property_id, unit_id, month, year } = req.query;
+    const startDate = `${year}-${month}-01`;
+    const endDate = new Date(year, month, 0).toISOString().split("T")[0];
+
+    let queryText = `
+      SELECT * FROM ledger_entries 
+      WHERE property_id = $1 
+      AND (
+        (check_in BETWEEN $2 AND $3) OR 
+        (check_out BETWEEN $2 AND $3) OR
+        (check_in <= $2 AND check_out >= $3)
+      )
+    `;
+    let params = [property_id, startDate, endDate];
+
+    if (unit_id && unit_id !== "null" && unit_id !== "undefined") {
+      queryText += " AND unit_id = $4";
+      params.push(unit_id);
+    }
+
+    queryText += " ORDER BY check_in ASC";
+
+    const result = await query(queryText, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error("Error fetching monthly ledger:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const handleOwnerAction = async (req, res) => {
+  try {
+    const { token, action } = req.query;
+
+    if (!token || !action) {
+      return res.status(400).json({ error: "Token and action are required" });
+    }
+
+    if (!["CONFIRM", "CANCEL"].includes(action)) {
+      return res
+        .status(400)
+        .json({ error: "Invalid action. Must be CONFIRM or CANCEL" });
+    }
+
+    const result = await query(
+      "SELECT * FROM bookings WHERE action_token = $1",
+      [token],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Invalid or expired token" });
+    }
+
+    const booking = result.rows[0];
+
+    if (booking.action_token_used) {
+      return res.status(400).json({
+        error: "This action has already been taken",
+        booking_status: booking.booking_status,
+      });
+    }
+
+    if (new Date() > new Date(booking.action_token_expires_at)) {
+      return res.status(400).json({ error: "Action token has expired" });
+    }
+
+    const validStatuses = [
+      "PENDING_OWNER_CONFIRMATION",
+      "BOOKING_REQUEST_SENT_TO_OWNER",
+    ];
+    if (!validStatuses.includes(booking.booking_status)) {
+      return res.status(400).json({
+        error: "Booking is not in a state that allows this action",
+        current_status: booking.booking_status,
+      });
+    }
+
+    if (booking.payment_status !== "SUCCESS") {
+      return res.status(400).json({
+        error: "Cannot process action - payment not confirmed",
+        payment_status: booking.payment_status,
+      });
+    }
+
+    const whatsapp = new WhatsAppService();
+    const frontendUrl = getFrontendUrl(req);
+
+    if (action === "CONFIRM") {
+      const ticketToken = generateTicketToken();
+      const { checkinStr, checkoutStr } = await getBookingTimeStrings(booking);
+      const dueAmount =
+        (parseFloat(booking.total_amount) || 0) -
+        parseFloat(booking.advance_amount);
+
+      await query(
+        `UPDATE bookings SET booking_status = 'TICKET_GENERATED', ticket_token = $1, action_token_used = true,
+         commission_status = CASE WHEN commission_status = 'PENDING' THEN 'CONFIRMED' ELSE commission_status END,
+         updated_at = NOW() WHERE booking_id = $2`,
+        [ticketToken, booking.booking_id],
+      );
+
+      try {
+        const totalPersons =
+          booking.persons ||
+          (booking.veg_guest_count || 0) + (booking.nonveg_guest_count || 0) ||
+          1;
+        const checkinDate = new Date(booking.checkin_datetime)
+          .toISOString()
+          .split("T")[0];
+        const checkoutDate = new Date(booking.checkout_datetime)
+          .toISOString()
+          .split("T")[0];
+        await query(
+          `INSERT INTO ledger_entries
+             (property_id, unit_id, customer_name, persons, check_in, check_out, payment_mode, amount, booking_id)
+           VALUES ($1, $2, $3, $4, $5, $6, 'online', $7, $8)
+           ON CONFLICT DO NOTHING`,
+          [
+            booking.property_id,
+            booking.unit_id || null,
+            booking.guest_name,
+            totalPersons,
+            checkinDate,
+            checkoutDate,
+            booking.advance_amount,
+            booking.booking_id,
+          ],
+        );
+      } catch (ledgerErr) {
+        console.error(
+          "[Booking Confirm] Failed to create ledger entry:",
+          ledgerErr.message,
+        );
+      }
+
+      const ticketUrl = `${frontendUrl}/ticket?token=${ticketToken}`;
+
+      await whatsapp.sendTextMessage(
+        booking.guest_phone,
+        `🎉 Your Booking is Confirmed!\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${checkinStr}\nCheck-out: ${checkoutStr}\nAdvance Paid: ₹${booking.advance_amount}\nDue at Property: ₹${dueAmount}\n\nView your secure e-ticket:\n${ticketUrl}\n\nThis link is unique to your booking. Please do not share it.`,
+      );
+
+      await whatsapp.sendTextMessage(
+        booking.admin_phone,
+        `✅ Booking Confirmed\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nGuest: ${booking.guest_name} (${booking.guest_phone})\nCheck-in: ${checkinStr}\nCheck-out: ${checkoutStr}\nAdvance: ₹${booking.advance_amount}\nDue at Property: ₹${dueAmount}\n\n\nTicket: ${ticketUrl}`,
+      );
+
+      if (booking.customer_id) {
+        createCustomerNotification(
+          booking.customer_id,
+          "Booking Confirmed 🎉",
+          `Your stay at ${booking.property_name} (${booking.booking_id}) is confirmed! Your e-ticket is ready.`,
+          "booking",
+          { booking_id: booking.booking_id, ticket_token: ticketToken }
+        ).catch(() => undefined);
+      }
+
+      try {
+        await createInProcessCommission(booking);
+      } catch (e) {
+        console.error(
+          "[Commission] in-process creation failed (handleOwnerAction):",
+          e.message,
+        );
+      }
+
+      return res.status(200).send(`
+        <!DOCTYPE html><html><head><title>Booking Confirmed</title>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#0a0a0a;color:white;}.container{background:#1a1a1a;padding:2rem;border-radius:16px;border:1px solid #10b98130;text-align:center;max-width:400px;}.icon{font-size:4rem;margin-bottom:1rem;color:#10b981;}h1{color:#10b981;}p{color:#999;}</style>
+        </head><body><div class="container"><div class="icon">✅</div><h1>Booking Confirmed!</h1><p>Guest: ${booking.guest_name}</p><p>Property: ${booking.property_name}</p><p>Ticket has been sent to the customer.</p></div></body></html>
+      `);
+    } else {
+      await query(
+        `UPDATE bookings SET booking_status = 'CANCELLED_BY_OWNER', action_token_used = true,
+         commission_status = CASE WHEN commission_status IN ('PENDING','CONFIRMED','IN_PROCESS') THEN 'CANCELLED' ELSE commission_status END,
+         refund_status = CASE WHEN payment_status = 'SUCCESS' THEN 'REFUND_PENDING' ELSE refund_status END,
+         refund_amount = CASE WHEN payment_status = 'SUCCESS' THEN advance_amount ELSE refund_amount END,
+         soft_lock_expires_at = NOW(), updated_at = NOW() WHERE booking_id = $1`,
+        [booking.booking_id],
+      );
+
+      await cancelInProcessCommission(booking.id);
+
+      if (booking.customer_id) {
+        createCustomerNotification(
+          booking.customer_id,
+          "Booking Cancelled",
+          `Your booking #${booking.booking_id} for ${booking.property_name} was cancelled by the owner. Refund has been initiated.`,
+          "booking",
+          { booking_id: booking.booking_id }
+        ).catch(() => undefined);
+      }
+
+      if (booking.payment_status === "SUCCESS" && booking.advance_amount > 0) {
+        try {
+          await processPaytmRefund(booking, parseFloat(booking.advance_amount));
+        } catch (refundErr) {
+          console.error("[OwnerCancel] Auto-refund failed:", refundErr.message);
+        }
+      }
+
+      const ownerName = booking.owner_name || "The owner";
+      const { checkinStr: _cancelCheckinStr, checkoutStr: _cancelCheckoutStr } =
+        await getBookingTimeStrings(booking);
+
+      if (booking.payment_status === "SUCCESS") {
+        await whatsapp.sendTextMessage(
+          booking.guest_phone,
+          `❌ Booking Cancelled\n\nWe are extremely sorry for the inconvenience. Your booking has been cancelled by the property owner.\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${_cancelCheckinStr}\nCheck-out: ${_cancelCheckoutStr}\n\nDo not worry Your refund of ₹${booking.advance_amount} will be credited within 24 hours.`,
+        );
+      } else {
+        await whatsapp.sendTextMessage(
+          booking.guest_phone,
+          `❌ Booking Cancelled\n\nWe are sorry, your booking has been cancelled by the property owner.\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${_cancelCheckinStr}\nCheck-out: ${_cancelCheckoutStr}`,
+        );
+      }
+
+      await whatsapp.sendInteractiveButtons(
+        booking.admin_phone,
+        `❌ Booking Cancelled by Owner\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${_cancelCheckinStr}\nCheck-out: ${_cancelCheckoutStr}\n${ownerName} cancelled booking of ${booking.guest_name}. Please contact the owner.\n\nOwner: ${booking.owner_phone}\nCustomer: ${booking.guest_phone}`,
+        [
+          {
+            id: `call_owner_${booking.booking_id}`.substring(0, 20),
+            title: "Call Owner",
+          },
+          {
+            id: `call_cust_${booking.booking_id}`.substring(0, 20),
+            title: "Call Customer",
+          },
+        ],
+      );
+
+      return res.status(200).send(`
+        <!DOCTYPE html><html><head><title>Booking Cancelled</title>
+        <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>body{font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#0a0a0a;color:white;}.container{background:#1a1a1a;padding:2rem;border-radius:16px;border:1px solid #ef444430;text-align:center;max-width:400px;}.icon{font-size:4rem;margin-bottom:1rem;color:#ef4444;}h1{color:#ef4444;}p{color:#999;}</style>
+        </head><body><div class="container"><div class="icon">❌</div><h1>Booking Cancelled</h1><p>Guest: ${booking.guest_name}</p><p>Property: ${booking.property_name}</p><p>Customer and admin have been notified.</p></div></body></html>
+      `);
+    }
+  } catch (error) {
+    console.error("Error handling owner action:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
+};
+
+function generateTicketToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+async function logWebhookEvent(eventType, bookingId, payload) {
+  try {
+    await query(
+      "INSERT INTO webhook_events (event_type, booking_id, payload, processed) VALUES ($1, $2, $3, true)",
+      [eventType, bookingId || null, JSON.stringify(payload)],
+    );
+  } catch (err) {
+    console.error("[WebhookEvent] Failed to log event:", err.message);
+  }
+}
+
+async function mergeMessageIds(bookingId, newIds) {
+  try {
+    await query(
+      `UPDATE bookings
+       SET whatsapp_message_ids = COALESCE(whatsapp_message_ids, '{}'::jsonb) || $1::jsonb,
+           updated_at = NOW()
+       WHERE booking_id = $2`,
+      [JSON.stringify(newIds), bookingId],
+    );
+  } catch (err) {
+    console.error("[WhatsApp] Failed to persist message IDs:", err.message);
+  }
+}
+
+const handleWhatsAppWebhook = async (req, res) => {
+  try {
+    const whatsapp = new WhatsAppService();
+
+    if (req.method === "GET") {
+      const mode = req.query["hub.mode"];
+      const token = req.query["hub.verify_token"];
+      const challenge = req.query["hub.challenge"];
+
+      const result = whatsapp.verifyWebhook(mode, token, challenge);
+      if (result) {
+        return res.status(200).send(result);
+      }
+      return res.status(403).send("Forbidden");
+    }
+
+    // Verify signature on POST requests
+    if (req.method === "POST") {
+      const signature = req.headers["x-hub-signature-256"];
+      const rawBody = req.rawBody;
+      if (rawBody) {
+        const valid = whatsapp.verifySignature(rawBody, signature);
+        if (!valid) {
+          console.error(
+            "[Webhook] Invalid x-hub-signature-256 — rejecting request",
+          );
+          return res.status(403).json({ error: "Invalid signature" });
+        }
+      }
+    }
+
+    // Log the raw incoming webhook event
+    await logWebhookEvent("WEBHOOK_RECEIVED", null, req.body);
+
+    const buttonResponse = whatsapp.extractButtonResponse(req.body);
+
+    if (buttonResponse) {
+      try {
+        // Button ID format: "C:{first14hex}" (Confirm) or "X:{first14hex}" (Cancel)
+        // This short format respects WhatsApp's 20-character button ID limit.
+        const buttonId = buttonResponse.buttonId;
+        let action = null;
+        let tokenPrefix = null;
+
+        if (buttonId && buttonId.startsWith("C:")) {
+          action = "CONFIRM";
+          tokenPrefix = buttonId.slice(2);
+        } else if (buttonId && buttonId.startsWith("X:")) {
+          action = "CANCEL";
+          tokenPrefix = buttonId.slice(2);
+        }
+
+        if (action && tokenPrefix) {
+          const result = await query(
+            "SELECT * FROM bookings WHERE action_token LIKE $1 || '%'",
+            [tokenPrefix],
+          );
+
+          if (result.rows.length > 0) {
+            const booking = result.rows[0];
+
+            // Idempotency: check if already actioned via token
+            if (booking.action_token_used) {
+              await whatsapp.sendTextMessage(
+                buttonResponse.from,
+                "⚠️ This action has already been taken.",
+              );
+              return res.status(200).json({ status: "ok" });
+            }
+
+            if (new Date() > new Date(booking.action_token_expires_at)) {
+              await whatsapp.sendTextMessage(
+                buttonResponse.from,
+                "⚠️ This action link has expired.",
+              );
+              return res.status(200).json({ status: "ok" });
+            }
+
+            const frontendUrl = getFrontendUrl(req);
+
+            if (booking.payment_status !== "SUCCESS") {
+              await whatsapp.sendTextMessage(
+                buttonResponse.from,
+                "⚠️ Cannot process - payment not confirmed for this booking.",
+              );
+              return res.status(200).json({ status: "ok" });
+            }
+
+            if (action === "CONFIRM") {
+              // Idempotency: already confirmed
+              if (
+                booking.booking_status === "TICKET_GENERATED" ||
+                booking.booking_status === "CONFIRMED"
+              ) {
+                await whatsapp.sendTextMessage(
+                  buttonResponse.from,
+                  `✅ Booking ${booking.booking_id} is already confirmed.`,
+                );
+                return res.status(200).json({ status: "ok" });
+              }
+
+              const ticketToken = generateTicketToken();
+
+              await query(
+                `UPDATE bookings
+                 SET booking_status = 'TICKET_GENERATED',
+                     ticket_token = $1,
+                     action_token_used = true,
+                     commission_status = CASE WHEN commission_status = 'PENDING' THEN 'CONFIRMED' ELSE commission_status END,
+                     updated_at = NOW()
+                 WHERE booking_id = $2`,
+                [ticketToken, booking.booking_id],
+              );
+
+              try {
+                const totalPersons =
+                  booking.persons ||
+                  (booking.veg_guest_count || 0) +
+                    (booking.nonveg_guest_count || 0) ||
+                  1;
+                const checkinDate = new Date(booking.checkin_datetime)
+                  .toISOString()
+                  .split("T")[0];
+                const checkoutDate = new Date(booking.checkout_datetime)
+                  .toISOString()
+                  .split("T")[0];
+                await query(
+                  `INSERT INTO ledger_entries
+                     (property_id, unit_id, customer_name, persons, check_in, check_out, payment_mode, amount, booking_id)
+                   VALUES ($1, $2, $3, $4, $5, $6, 'online', $7, $8)
+                   ON CONFLICT DO NOTHING`,
+                  [
+                    booking.property_id,
+                    booking.unit_id || null,
+                    booking.guest_name,
+                    totalPersons,
+                    checkinDate,
+                    checkoutDate,
+                    booking.advance_amount,
+                    booking.booking_id,
+                  ],
+                );
+              } catch (ledgerErr) {
+                console.error(
+                  "[WhatsApp CONFIRM] Failed to create ledger entry:",
+                  ledgerErr.message,
+                );
+              }
+
+              const ticketUrl = `${frontendUrl}/ticket?token=${ticketToken}`;
+              const { checkinStr, checkoutStr } =
+                await getBookingTimeStrings(booking);
+              const dueAmount =
+                (parseFloat(booking.total_amount) || 0) -
+                parseFloat(booking.advance_amount);
+
+              try {
+                const guestResult = await whatsapp.sendTextMessage(
+                  booking.guest_phone,
+                  `🎉 Your Booking is Confirmed!\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${checkinStr}\nCheck-out: ${checkoutStr}\nAdvance Paid: ₹${booking.advance_amount}\nDue at Property: ₹${dueAmount}\n\nView your secure e-ticket:\n${ticketUrl}\n\nThis link is unique to your booking. Please do not share it.`,
+                );
+                const adminResult = await whatsapp.sendTextMessage(
+                  booking.admin_phone,
+                  `✅ Booking Confirmed\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nGuest: ${booking.guest_name} (${booking.guest_phone})\nCheck-in: ${checkinStr}\nCheck-out: ${checkoutStr}\nAdvance: ₹${booking.advance_amount}\nDue at Property: ₹${dueAmount}\n\nTicket: ${ticketUrl}`,
+                );
+                const ownerAckResult = await whatsapp.sendTextMessage(
+                  buttonResponse.from,
+                  `✅ Booking ${booking.booking_id} confirmed! Guest have been notified with the ticket link.`,
+                );
+                await mergeMessageIds(booking.booking_id, {
+                  guest_confirm: guestResult.messageId,
+                  admin_confirm: adminResult.messageId,
+                  owner_ack_confirm: ownerAckResult.messageId,
+                });
+                await logWebhookEvent("OWNER_CONFIRM", booking.booking_id, {
+                  from: buttonResponse.from,
+                  inboundMessageId: buttonResponse.messageId,
+                  ticketToken,
+                });
+              } catch (notifyErr) {
+                console.error(
+                  "[WhatsApp CONFIRM] Notification failed:",
+                  notifyErr.message,
+                );
+                try {
+                  await whatsapp.sendTextMessage(
+                    buttonResponse.from,
+                    `✅ Booking ${booking.booking_id} is confirmed! There was a delay sending notifications but your confirmation is saved.`,
+                  );
+                } catch (_) {}
+              }
+
+              try {
+                await createInProcessCommission(booking);
+              } catch (e) {
+                console.error(
+                  "[Commission] in-process creation failed (WhatsApp CONFIRM):",
+                  e.message,
+                );
+              }
+            } else if (action === "CANCEL") {
+              // Idempotency: already cancelled
+              if (booking.booking_status === "CANCELLED_BY_OWNER") {
+                await whatsapp.sendTextMessage(
+                  buttonResponse.from,
+                  `❌ Booking ${booking.booking_id} is already cancelled.`,
+                );
+                return res.status(200).json({ status: "ok" });
+              }
+
+              await query(
+                `UPDATE bookings
+                 SET booking_status = 'CANCELLED_BY_OWNER',
+                     action_token_used = true,
+                     commission_status = CASE WHEN commission_status IN ('PENDING','CONFIRMED','IN_PROCESS') THEN 'CANCELLED' ELSE commission_status END,
+                     refund_status = CASE WHEN payment_status = 'SUCCESS' THEN 'REFUND_PENDING' ELSE refund_status END,
+                     refund_amount = CASE WHEN payment_status = 'SUCCESS' THEN advance_amount ELSE refund_amount END,
+                     soft_lock_expires_at = NOW(), updated_at = NOW()
+                 WHERE booking_id = $1`,
+                [booking.booking_id],
+              );
+
+              await cancelInProcessCommission(booking.id);
+
+              const ownerName = booking.owner_name || "The owner";
+              const {
+                checkinStr: _waCancelCheckinStr,
+                checkoutStr: _waCancelCheckoutStr,
+              } = await getBookingTimeStrings(booking);
+
+              try {
+                const messageIds = {};
+                if (booking.payment_status === "SUCCESS") {
+                  const guestResult = await whatsapp.sendTextMessage(
+                    booking.guest_phone,
+                    `❌ Booking Cancelled\n\nWe are extremely sorry for the inconvenience. Your booking has been cancelled by the property owner.\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${_waCancelCheckinStr}\nCheck-out: ${_waCancelCheckoutStr}\n\nYour refund of ₹${booking.advance_amount} will be credited within 24 hours.`,
+                  );
+                  messageIds.guest_cancel = guestResult.messageId;
+                } else {
+                  const guestResult = await whatsapp.sendTextMessage(
+                    booking.guest_phone,
+                    `❌ Booking Cancelled\n\nWe are sorry, your booking has been cancelled by the property owner.\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nCheck-in: ${_waCancelCheckinStr}\nCheck-out: ${_waCancelCheckoutStr}`,
+                  );
+                  messageIds.guest_cancel = guestResult.messageId;
+                }
+                const adminResult = await whatsapp.sendTextMessage(
+                  booking.admin_phone,
+                  `❌ Booking Cancelled by Owner\n\nBooking ID: ${booking.booking_id}\nProperty: ${booking.property_name}\nGuest: ${booking.guest_name} (${booking.guest_phone})\nCheck-in: ${_waCancelCheckinStr}\nCheck-out: ${_waCancelCheckoutStr}\n\nCancelled by: ${ownerName} (${booking.owner_phone})\nRefund will be processed within 24 hours.`,
+                );
+                messageIds.admin_cancel = adminResult.messageId;
+                const ownerAckResult = await whatsapp.sendTextMessage(
+                  buttonResponse.from,
+                  `❌ Booking ${booking.booking_id} cancelled. Customer notified. Refund will be processed within 24 hours.`,
+                );
+                messageIds.owner_ack_cancel = ownerAckResult.messageId;
+                await mergeMessageIds(booking.booking_id, messageIds);
+                await logWebhookEvent("OWNER_CANCEL", booking.booking_id, {
+                  from: buttonResponse.from,
+                  inboundMessageId: buttonResponse.messageId,
+                });
+              } catch (notifyErr) {
+                console.error(
+                  "[WhatsApp CANCEL] Notification failed:",
+                  notifyErr.message,
+                );
+                try {
+                  await whatsapp.sendTextMessage(
+                    buttonResponse.from,
+                    `❌ Booking ${booking.booking_id} has been cancelled and saved. There was a delay sending other notifications.`,
+                  );
+                } catch (_) {}
+              }
+
+              if (booking.referral_code) {
+                try {
+                  await query(
+                    "DELETE FROM referral_transactions WHERE booking_id = $1 AND status = 'pending'",
+                    [booking.id],
+                  );
+                } catch (refErr) {
+                  console.error("Error cancelling referral:", refErr);
+                }
+              }
+            }
+          }
+        }
+      } catch (parseErr) {
+        console.error("Error parsing button response:", parseErr);
+      }
+    }
+
+    return res.status(200).json({ status: "ok" });
+  } catch (error) {
+    console.error("WhatsApp webhook error:", error);
+    return res.status(200).json({ status: "ok" });
+  }
+};
+
+const resolvePropertyIds = async (propertyId) => {
+  const result = await query(
+    "SELECT id, property_id FROM properties WHERE id::text = $1 OR property_id = $1 LIMIT 1",
+    [String(propertyId)],
+  );
+  if (result.rows.length === 0) return null;
+  return { internalId: result.rows[0].id, alphaId: result.rows[0].property_id };
+};
+
+const validateOwnerAccess = async (propertyId, mobile) => {
+  if (!mobile) return false;
+  const cleanMobile = String(mobile).replace(/\D/g, "");
+  const result = await query(
+    `SELECT id FROM owners WHERE owner_otp_number = $1 AND property_id = $2`,
+    [cleanMobile, String(propertyId)],
+  );
+  return result.rows.length > 0;
+};
+
+const getOwnerLedger = async (req, res) => {
+  try {
+    const { property_id, year, month, unit_id, mobile } = req.query;
+    if (!property_id || !year || !month) {
+      return res.status(400).json({
+        success: false,
+        message: "property_id, year, and month are required",
+      });
+    }
+
+    const isOwner = await validateOwnerAccess(property_id, mobile);
+    if (!isOwner) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const resolved = await resolvePropertyIds(property_id);
+    if (!resolved) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const m = String(month).padStart(2, "0");
+    const startDate = `${year}-${m}-01`;
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const endDate = `${year}-${m}-${String(lastDay).padStart(2, "0")}`;
+
+    let bookingsQuery = `
+      SELECT 
+        b.id, b.guest_name AS customer_name, b.checkin_datetime AS check_in, 
+        b.checkout_datetime AS check_out, b.payment_method AS payment_mode, 
+        (COALESCE(b.total_amount, 0) - COALESCE(b.advance_amount, 0)) AS amount,
+        b.advance_amount, b.total_amount,
+        b.unit_id,
+        COALESCE(pu.name, 'N/A') AS unit_name,
+        COALESCE(pu.check_in_time, p.check_in_time) AS check_in_time,
+        COALESCE(pu.check_out_time, p.check_out_time) AS check_out_time,
+        'website' AS source,
+        b.booking_id, b.checkout_datetime, b.booking_status,
+        b.created_at AS booking_date
+      FROM bookings b
+      LEFT JOIN property_units pu ON b.unit_id = pu.id
+      LEFT JOIN properties p ON (p.property_id = b.property_id OR p.id::text = b.property_id)
+      WHERE (b.property_id = $1 OR b.property_id = $4)
+      AND b.payment_status = 'SUCCESS'
+      AND (
+        (DATE(b.checkin_datetime) BETWEEN $2 AND $3) OR
+        (DATE(b.checkout_datetime) BETWEEN $2 AND $3) OR
+        (DATE(b.checkin_datetime) <= $2 AND DATE(b.checkout_datetime) >= $3)
+      )
+    `;
+    let bookingsParams = [
+      String(resolved.internalId),
+      startDate,
+      endDate,
+      resolved.alphaId || "",
+    ];
+
+    if (unit_id && unit_id !== "all") {
+      bookingsQuery += ` AND b.unit_id = $5`;
+      bookingsParams.push(unit_id);
+    }
+
+    let ledgerQuery = `
+      SELECT 
+        le.id, le.customer_name, le.check_in, le.check_out, 
+        le.payment_mode, le.amount, le.unit_id,
+        COALESCE(pu.name, 'N/A') AS unit_name,
+        COALESCE(pu.check_in_time, p.check_in_time) AS check_in_time,
+        COALESCE(pu.check_out_time, p.check_out_time) AS check_out_time,
+        'offline' AS source
+      FROM ledger_entries le
+      LEFT JOIN property_units pu ON le.unit_id = pu.id
+      LEFT JOIN properties p ON (p.property_id = le.property_id OR p.id::text = le.property_id)
+      WHERE (le.property_id = $1 OR le.property_id = $4)
+      AND le.booking_id IS NULL
+      AND (le.status IS NULL OR le.status != 'deleted')
+      AND (
+        (le.check_in BETWEEN $2 AND $3) OR
+        (le.check_out BETWEEN $2 AND $3) OR
+        (le.check_in <= $2 AND le.check_out >= $3)
+      )
+    `;
+    let ledgerParams = [
+      String(resolved.internalId),
+      startDate,
+      endDate,
+      resolved.alphaId || "",
+    ];
+
+    if (unit_id && unit_id !== "all") {
+      ledgerQuery += ` AND le.unit_id = $5`;
+      ledgerParams.push(unit_id);
+    }
+
+    const [bookingsResult, ledgerResult] = await Promise.all([
+      query(bookingsQuery, bookingsParams),
+      query(ledgerQuery, ledgerParams),
+    ]);
+
+    const combined = [...bookingsResult.rows, ...ledgerResult.rows].sort(
+      (a, b) => new Date(b.check_in) - new Date(a.check_in),
+    );
+
+    res.json({ success: true, data: combined });
+  } catch (error) {
+    console.error("Error fetching owner ledger:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+const getOwnerUnits = async (req, res) => {
+  try {
+    const { property_id, mobile } = req.query;
+    if (!property_id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "property_id is required" });
+    }
+
+    const isOwner = await validateOwnerAccess(property_id, mobile);
+    if (!isOwner) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+    const resolved = await resolvePropertyIds(property_id);
+    if (!resolved) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const result = await query(
+      "SELECT id, name FROM property_units WHERE property_id = $1 ORDER BY name",
+      [resolved.internalId],
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error("Error fetching owner units:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+async function fetchCancellationPolicy(unitId, propertyId) {
+  if (unitId) {
+    const unitRes = await query(
+      `SELECT cancellation_policy FROM property_units WHERE id = $1`,
+      [unitId],
+    );
+    if (unitRes.rows.length > 0 && unitRes.rows[0].cancellation_policy) {
+      return unitRes.rows[0].cancellation_policy;
+    }
+  }
+  const propRes = await query(
+    `SELECT cancellation_policy FROM properties WHERE id::text = $1 OR property_id = $1 LIMIT 1`,
+    [propertyId],
+  );
+  if (propRes.rows.length > 0 && propRes.rows[0].cancellation_policy) {
+    return propRes.rows[0].cancellation_policy;
+  }
+  return null;
+}
+
+function computeCancellationCase(policy, checkinDatetime, totalAmount) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const checkin = new Date(checkinDatetime);
+  checkin.setHours(0, 0, 0, 0);
+  const daysBeforeCheckin = Math.floor(
+    (checkin - today) / (1000 * 60 * 60 * 24),
+  );
+
+  const fullRefundDays = parseInt(policy.full_refund_days) || 0;
+  const halfRefundDays = parseInt(policy.half_refund_days) || 0;
+  const total = parseFloat(totalAmount) || 0;
+
+  if (daysBeforeCheckin >= fullRefundDays) {
+    return {
+      refund_case: 1,
+      label: "Full Refund",
+      refund_amount: total,
+      owner_amount: 0,
+      days_before_checkin: daysBeforeCheckin,
+      ledger_note: "Booking Cancelled – Full Refund",
+      referral_source: null,
+    };
+  } else if (daysBeforeCheckin >= halfRefundDays) {
+    const half = Math.round(total * 0.5 * 100) / 100;
+    return {
+      refund_case: 2,
+      label: "50% Refund",
+      refund_amount: half,
+      owner_amount: half,
+      days_before_checkin: daysBeforeCheckin,
+      ledger_note: "Booking Cancelled – 50% Owner Payout",
+      referral_source: "cancellation_50_payout",
+    };
+  } else {
+    return {
+      refund_case: 3,
+      label: "No Refund",
+      refund_amount: 0,
+      owner_amount: total,
+      days_before_checkin: daysBeforeCheckin,
+      ledger_note: "Booking Cancelled – Full Owner Compensation",
+      referral_source: "cancellation_owner_compensation",
+    };
+  }
+}
+
+const getCancelPreview = async (req, res) => {
+  try {
+    const { booking_id } = req.params;
+    if (!booking_id) {
+      return res.status(400).json({ error: "booking_id is required" });
+    }
+
+    const bookingRes = await query(
+      `SELECT * FROM bookings WHERE booking_id = $1`,
+      [booking_id],
+    );
+    if (bookingRes.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    const booking = bookingRes.rows[0];
+    const advanceAmount = parseFloat(booking.advance_amount) || 0;
+    const totalBookingAmount = parseFloat(booking.total_amount) || 0;
+    const policy = await fetchCancellationPolicy(
+      booking.unit_id,
+      booking.property_id,
+    );
+
+    if (!policy) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const checkin = new Date(booking.checkin_datetime);
+      checkin.setHours(0, 0, 0, 0);
+      const daysBeforeCheckin = Math.floor(
+        (checkin - today) / (1000 * 60 * 60 * 24),
+      );
+      return res.json({
+        has_policy: false,
+        days_before_checkin: daysBeforeCheckin,
+        advance_amount: advanceAmount,
+        total_amount: totalBookingAmount,
+        checkin_date: booking.checkin_datetime,
+      });
+    }
+
+    const result = computeCancellationCase(
+      policy,
+      booking.checkin_datetime,
+      advanceAmount,
+    );
+
+    return res.json({
+      has_policy: true,
+      policy,
+      advance_amount: advanceAmount,
+      total_amount: totalBookingAmount,
+      checkin_date: booking.checkin_datetime,
+      ...result,
+    });
+  } catch (error) {
+    console.error("[CancelPreview] Error:", error.message);
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
+};
+
+const handleAdminCancel = async (req, res) => {
+  try {
+    const { booking_id } = req.body;
+    if (!booking_id) {
+      return res.status(400).json({ error: "booking_id is required" });
+    }
+
+    const bookingRes = await query(
+      `SELECT * FROM bookings WHERE booking_id = $1`,
+      [booking_id],
+    );
+    if (bookingRes.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    const booking = bookingRes.rows[0];
+
+    if (booking.booking_status === "CANCELLED") {
+      return res.status(400).json({ error: "Booking is already cancelled" });
+    }
+
+    const propRes = await query(
+      `SELECT id, category FROM properties WHERE property_id = $1 OR id::text = $1 LIMIT 1`,
+      [booking.property_id],
+    );
+    const isVillaBooking =
+      propRes.rows.length > 0 && propRes.rows[0].category === "villa";
+    const propertyDbId = propRes.rows.length > 0 ? propRes.rows[0].id : null;
+
+    const advanceAmount = parseFloat(booking.advance_amount) || 0;
+    const policy = await fetchCancellationPolicy(
+      booking.unit_id,
+      booking.property_id,
+    );
+
+    let cancellationResult = null;
+    if (policy && booking.checkin_datetime) {
+      cancellationResult = computeCancellationCase(
+        policy,
+        booking.checkin_datetime,
+        advanceAmount,
+      );
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `UPDATE bookings
+         SET booking_status = 'CANCELLED', commission_status = 'CANCELLED', updated_at = NOW()
+         WHERE booking_id = $1`,
+        [booking_id],
+      );
+
+      const existingLedgerRes = await client.query(
+        `SELECT unit_id, check_in, check_out, persons FROM ledger_entries WHERE booking_id = $1 LIMIT 1`,
+        [booking_id],
+      );
+
+      await client.query(`DELETE FROM ledger_entries WHERE booking_id = $1`, [
+        booking_id,
+      ]);
+
+      {
+        const ledgerRow =
+          existingLedgerRes.rows.length > 0 ? existingLedgerRes.rows[0] : null;
+        const restoreCheckIn = ledgerRow
+          ? new Date(ledgerRow.check_in)
+          : new Date(booking.checkin_datetime);
+        const restoreCheckOut = ledgerRow
+          ? new Date(ledgerRow.check_out)
+          : new Date(booking.checkout_datetime);
+        const restorePersons = ledgerRow
+          ? ledgerRow.persons || 1
+          : booking.persons || 1;
+        const restoreUnitId = ledgerRow ? ledgerRow.unit_id : booking.unit_id;
+
+        if (isVillaBooking && propertyDbId) {
+          let current = new Date(restoreCheckIn);
+          while (current < restoreCheckOut) {
+            await client.query(
+              `UPDATE availability_calendar SET is_booked = false, updated_at = NOW() WHERE property_id = $1 AND date = $2`,
+              [propertyDbId, current.toISOString().split("T")[0]],
+            );
+            current.setDate(current.getDate() + 1);
+          }
+          console.log(
+            `[AdminCancel] Restored villa availability_calendar for property ${booking.property_id}`,
+          );
+        }
+      }
+
+      await client.query(
+        `UPDATE referral_transactions
+         SET status = 'canceled', updated_at = NOW()
+         WHERE booking_id = $1 AND type = 'earning' AND status = 'in_process'`,
+        [booking.id],
+      );
+
+      const rawPhone = (booking.owner_phone || "").trim();
+      const digits = rawPhone.replace(/\D/g, "");
+      const phone10 = digits.length >= 10 ? digits.slice(-10) : digits;
+      const phone91 = `91${phone10}`;
+      console.log(
+        `[AdminCancel] Looking up owner — phone="${phone10}", property_id="${booking.property_id}", propertyDbId=${propertyDbId}`,
+      );
+
+      const ownerRefRes = await client.query(
+        `SELECT id FROM referral_users
+         WHERE referral_type = 'owner'
+         AND (
+           referral_otp_number = ANY($1)
+           OR property_id = $2
+           OR (linked_property_id IS NOT NULL AND linked_property_id = $3)
+         )
+         LIMIT 1`,
+        [[rawPhone, phone10, phone91], booking.property_id, propertyDbId],
+      );
+      console.log(
+        `[AdminCancel] Owner referral lookup result: ${ownerRefRes.rows.length} row(s)`,
+      );
+
+      let ledgerNote = "Booking Cancelled";
+      let ownerEarning = 0;
+      let refundCase = 0;
+      let refundAmount = 0;
+      let referralSource = null;
+
+      if (cancellationResult) {
+        ledgerNote = cancellationResult.ledger_note;
+        ownerEarning = cancellationResult.owner_amount;
+        refundCase = cancellationResult.refund_case;
+        refundAmount = cancellationResult.refund_amount;
+        referralSource = cancellationResult.referral_source;
+      } else if (ownerRefRes.rows.length > 0) {
+        ownerEarning =
+          advanceAmount > 0 ? Math.round(advanceAmount * 0.25 * 100) / 100 : 0;
+        referralSource = "admin_cancel_compensation";
+        ledgerNote = "Booking Cancelled";
+        refundCase = 0;
+      }
+
+      if (ownerRefRes.rows.length > 0 && ownerEarning > 0 && referralSource) {
+        const ownerReferralId = ownerRefRes.rows[0].id;
+        const cancelCompInsert = await client.query(
+          `INSERT INTO referral_transactions
+             (referral_user_id, booking_id, amount, type, status, source)
+           VALUES ($1, $2, $3, 'earning', 'available', $4)
+           ON CONFLICT DO NOTHING
+           RETURNING id`,
+          [ownerReferralId, booking.id, ownerEarning, referralSource],
+        );
+        if (cancelCompInsert.rows.length > 0) {
+          await client.query(
+            `UPDATE referral_users SET balance = balance + $1 WHERE id = $2`,
+            [ownerEarning, ownerReferralId],
+          );
+        } else {
+          console.log(
+            `[Commission] Admin-cancel compensation skipped for booking ${booking.booking_id} — already exists`,
+          );
+        }
+      }
+
+      await client.query(
+        `INSERT INTO ledger_entries
+           (property_id, unit_id, customer_name, persons, check_in, check_out, payment_mode, amount, booking_id, note, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'offline', $7, $8, $9, 'cancelled')`,
+        [
+          booking.property_id,
+          booking.unit_id || null,
+          booking.guest_name,
+          booking.persons || 1,
+          booking.checkin_datetime
+            ? new Date(booking.checkin_datetime).toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0],
+          booking.checkout_datetime
+            ? new Date(booking.checkout_datetime).toISOString().split("T")[0]
+            : new Date().toISOString().split("T")[0],
+          advanceAmount,
+          booking_id,
+          ledgerNote,
+        ],
+      );
+
+      await client.query("COMMIT");
+
+      let paytmRefundResult = null;
+      if (refundCase === 1) {
+        paytmRefundResult = await processPaytmRefund(booking, advanceAmount);
+      } else if (refundCase === 2) {
+        const halfAmount = Math.round(advanceAmount * 0.5 * 100) / 100;
+        paytmRefundResult = await processPaytmRefund(booking, halfAmount);
+      }
+      console.log(`[AdminCancel] Paytm refund result:`, paytmRefundResult);
+
+      const whatsapp = new WhatsAppService();
+      const { checkinStr, checkoutStr } = await getBookingTimeStrings(booking);
+      const propertyName = booking.property_name || "the property";
+
+      let guestMsg = `Your booking for *${propertyName}* from *${checkinStr} to ${checkoutStr}* has been cancelled by the admin.`;
+      if (refundCase === 1) {
+        const refundInitiated = paytmRefundResult?.success;
+        guestMsg += refundInitiated
+          ? ` A *full refund of ₹${advanceAmount.toLocaleString("en-IN")}* has been initiated to your original payment method and will be credited within 5–7 business days.`
+          : ` You are eligible for a *full refund of ₹${advanceAmount.toLocaleString("en-IN")}*. Please contact support if you don't receive it within 7 business days.`;
+      } else if (refundCase === 2) {
+        const refundInitiated = paytmRefundResult?.success;
+        guestMsg += refundInitiated
+          ? ` As per the cancellation policy, a *50% refund of ₹${refundAmount.toLocaleString("en-IN")}* has been initiated to your original payment method and will be credited within 5–7 business days.Please contact support if you don't receive it within 7 business days.`
+          : ` As per the cancellation policy, you are eligible for a *50% refund of ₹${refundAmount.toLocaleString("en-IN")}*. Please contact support if you don't receive it within 7 business days.`;
+      } else if (refundCase === 3) {
+        guestMsg += ` As per the cancellation policy, no refund is applicable for this booking.`;
+      } else {
+        guestMsg += ` If you have any questions, please contact support.`;
+      }
+
+      let ownerMsg = `Booking *${booking_id}* has been cancelled by admin.`;
+      if (refundCase === 1) {
+        ownerMsg += ` Full refund will be processed for the guest. The guest only will receive a full refund.`;
+      } else if (refundCase === 2) {
+        ownerMsg += ` As per the cancellation policy, 50% (₹${ownerEarning.toLocaleString("en-IN")}) has been credited to your referral dashboard.`;
+      } else if (refundCase === 3) {
+        ownerMsg += ` As per the cancellation policy, the full booking amount (₹${ownerEarning.toLocaleString("en-IN")}) has been credited to your referral dashboard.`;
+      } else {
+        ownerMsg += ` Your eligible cancellation earning has been recorded.`;
+      }
+
+      if (booking.guest_phone) {
+        await whatsapp.sendTextMessage(booking.guest_phone, guestMsg);
+      }
+      if (booking.owner_phone) {
+        await whatsapp.sendTextMessage(booking.owner_phone, ownerMsg);
+      }
+      const adminPhone = process.env.ADMIN_PHONE;
+      if (adminPhone) {
+        const caseLabel =
+          refundCase === 1
+            ? "Full Refund"
+            : refundCase === 2
+              ? "50% Refund"
+              : refundCase === 3
+                ? "No Refund"
+                : "Legacy (25% Owner)";
+        await whatsapp.sendTextMessage(
+          adminPhone,
+          `Booking *${booking_id}* cancelled. Case: ${caseLabel}. Refund to guest: ₹${refundAmount}. Owner payout: ₹${ownerEarning}.`,
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: "Booking cancelled successfully",
+        refund_case: refundCase,
+        refund_amount: refundAmount,
+        owner_amount: ownerEarning,
+      });
+    } catch (innerErr) {
+      await client.query("ROLLBACK");
+      throw innerErr;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error("[AdminCancel] Error:", error.message);
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
+};
+
+const handleNoShow = async (req, res) => {
+  try {
+    const { booking_id, mobile } = req.body;
+    if (!booking_id || !mobile) {
+      return res
+        .status(400)
+        .json({ error: "booking_id and mobile are required" });
+    }
+
+    const bookingRes = await query(
+      `SELECT * FROM bookings WHERE booking_id = $1`,
+      [booking_id],
+    );
+    if (bookingRes.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    const booking = bookingRes.rows[0];
+
+    if (booking.owner_phone !== mobile) {
+      return res.status(403).json({ error: "Not authorised for this booking" });
+    }
+    if (booking.booking_status !== "TICKET_GENERATED") {
+      return res.status(400).json({
+        error: "Only confirmed bookings can be marked as no-show",
+        current_status: booking.booking_status,
+      });
+    }
+    if (new Date(booking.checkout_datetime) <= new Date()) {
+      return res.status(400).json({
+        error: "Checkout time has already passed — cannot mark as no-show",
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      await client.query(
+        `UPDATE bookings
+         SET booking_status = 'NO_SHOW', commission_paid = true, commission_paid_at = NOW(),
+             commission_status = 'NO_SHOW_CANCELED', updated_at = NOW()
+         WHERE booking_id = $1`,
+        [booking_id],
+      );
+
+      await client.query(
+        `UPDATE referral_transactions
+         SET status = 'no_show_canceled', updated_at = NOW()
+         WHERE booking_id = $1 AND type = 'earning' AND status = 'in_process'`,
+        [booking.id],
+      );
+
+      const ownerRefRes = await client.query(
+        `SELECT id FROM referral_users WHERE referral_otp_number = $1 AND referral_type = 'owner'`,
+        [mobile],
+      );
+      if (ownerRefRes.rows.length > 0) {
+        const ownerReferralId = ownerRefRes.rows[0].id;
+        const totalAmount = resolveCommissionTotal(booking);
+        const ownerCompensation =
+          totalAmount > 0 ? Math.round(totalAmount * 0.15 * 100) / 100 : 0;
+        if (ownerCompensation > 0) {
+          const noShowCompInsert = await client.query(
+            `INSERT INTO referral_transactions
+               (referral_user_id, booking_id, amount, type, status, source)
+             VALUES ($1, $2, $3, 'earning', 'available', 'no_show_compensation')
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [ownerReferralId, booking.id, ownerCompensation],
+          );
+          if (noShowCompInsert.rows.length > 0) {
+            await client.query(
+              `UPDATE referral_users SET balance = balance + $1 WHERE id = $2`,
+              [ownerCompensation, ownerReferralId],
+            );
+          } else {
+            console.log(
+              `[Commission] No-show compensation skipped for booking ${booking.booking_id} — already exists`,
+            );
+          }
+        }
+      }
+
+      await client.query("COMMIT");
+      return res.json({ success: true, message: "Booking marked as no-show" });
+    } catch (innerErr) {
+      await client.query("ROLLBACK");
+      throw innerErr;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error("[NoShow] Error:", error.message);
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
+};
+
+const handleDeleteBooking = async (req, res) => {
+  try {
+    const { booking_id } = req.body;
+    if (!booking_id) {
+      return res
+        .status(400)
+        .json({ success: false, error: "booking_id is required" });
+    }
+
+    const bookingRes = await query(
+      "SELECT * FROM bookings WHERE booking_id = $1",
+      [booking_id],
+    );
+    if (bookingRes.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Booking not found" });
+    }
+    const booking = bookingRes.rows[0];
+
+    if (
+      booking.booking_status === "CANCELLED" ||
+      booking.booking_status === "DELETED"
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: `Booking is already ${booking.booking_status.toLowerCase()}`,
+      });
+    }
+
+    const delPropRes = await query(
+      `SELECT id, category FROM properties WHERE property_id = $1 OR id::text = $1 LIMIT 1`,
+      [booking.property_id],
+    );
+    const isVillaDel =
+      delPropRes.rows.length > 0 && delPropRes.rows[0].category === "villa";
+    const delPropertyDbId =
+      delPropRes.rows.length > 0 ? delPropRes.rows[0].id : null;
+
+    const ledgerRes = await query(
+      "SELECT unit_id, check_in, check_out, persons FROM ledger_entries WHERE booking_id = $1 LIMIT 1",
+      [booking_id],
+    );
+
+    const ledgerRow = ledgerRes.rows.length > 0 ? ledgerRes.rows[0] : null;
+    const unitId = ledgerRow ? ledgerRow.unit_id : booking.unit_id;
+    const checkIn = ledgerRow
+      ? new Date(ledgerRow.check_in)
+      : new Date(booking.checkin_datetime);
+    const checkOut = ledgerRow
+      ? new Date(ledgerRow.check_out)
+      : new Date(booking.checkout_datetime);
+    const persons = ledgerRow ? ledgerRow.persons || 1 : booking.persons || 1;
+
+    if (isVillaDel && delPropertyDbId) {
+      let current = new Date(checkIn);
+      while (current < checkOut) {
+        await query(
+          "UPDATE availability_calendar SET is_booked = false, updated_at = NOW() WHERE property_id = $1 AND date = $2",
+          [delPropertyDbId, current.toISOString().split("T")[0]],
+        );
+        current.setDate(current.getDate() + 1);
+      }
+      console.log(
+        `[DeleteBooking] Restored villa availability_calendar for property ${booking.property_id}`,
+      );
+    }
+
+    await query(
+      "UPDATE bookings SET booking_status = 'DELETED', updated_at = NOW() WHERE booking_id = $1",
+      [booking_id],
+    );
+
+    if (ledgerRes.rows.length > 0) {
+      await query(
+        "UPDATE ledger_entries SET status = 'deleted' WHERE booking_id = $1",
+        [booking_id],
+      );
+    }
+
+    res.json({ success: true, message: "Booking deleted" });
+  } catch (error) {
+    console.error("Error deleting booking:", error);
+    res.status(500).json({ success: false, error: "Internal server error" });
+  }
+};
+
+module.exports = {
+  getBookingTimeStrings,
+  getLedgerEntries,
+  addLedgerEntry,
+  getMonthlyLedger,
+  quoteBooking,
+  initiateBooking,
+  getBooking,
+  getCustomerBookings,
+  updateBookingStatus,
+  processConfirmedBooking,
+  processCancelledBooking,
+  updateLedgerEntry,
+  deleteLedgerEntry,
+  handleOwnerAction,
+  handleWhatsAppWebhook,
+  getOwnerLedger,
+  getOwnerUnits,
+  handleNoShow,
+  handleAdminCancel,
+  getCancelPreview,
+  handleDeleteBooking,
+};
