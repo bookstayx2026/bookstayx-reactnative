@@ -1,0 +1,34 @@
+import { apiRequest } from "./client";
+const bearer=(token:string)=>({Authorization:`Bearer ${token}`});
+export type TopEarner={id?:number;username?:string;name?:string;total_earnings?:number;earnings?:number;amount?:number;referral_count?:number};
+export type ReferralDashboard={username:string;referral_code:string;referral_type:string;commission_label:string;total_earnings:number;total_withdrawals:number;available_balance:number;pending_withdrawal_amount:number;total_referrals:number;saved_upi_id?:string|null};
+export type ShareInfo={referralCode:string;referralLink:string;referralQrCode:string;referralType:string};
+export type ReferralLogin={token:string;refreshToken:string;user:{id:number;username:string;referral_code?:string}};
+export type ReferralUpi={id:number;upi_id:string;mobile_number?:string;beneficiary_name:string;is_default:boolean;is_invalid?:boolean};
+export type AdminReferral={id:number;username:string;referral_otp_number:string;referral_code:string;status:string;referral_type:string;balance:number;total_referrals:number;total_bookings:number;parent_owner_name?:string|null;created_at:string};
+export type OwnerB2BPartner={id:number;username:string;referral_otp_number:string;referral_code:string;referral_url:string;property_name?:string;referral_qr?:string};
+export const getTopEarners=(period:"month"|"all")=>apiRequest<TopEarner[]>(`/api/referrals/top-earners?period=${period}`);
+export const requestReferralOtp=(mobile:string,purpose:"referral_login"|"referral_register")=>apiRequest<{success:true;message:string}>("/api/referrals/request-otp",{method:"POST",body:{mobile,purpose}});
+export const verifyReferralOtp=(mobile:string,otp:string,purpose:"referral_login"|"referral_register")=>apiRequest<{success:true;token:string;exists:boolean}>("/api/referrals/verify-otp",{method:"POST",body:{mobile,otp,purpose}});
+export const registerReferral=(token:string,username:string,referralCode:string)=>apiRequest<Record<string,unknown>>("/api/referrals/register",{method:"POST",headers:bearer(token),body:{username,referralCode}});
+export const loginReferral=(token:string)=>apiRequest<ReferralLogin>("/api/referrals/login",{method:"POST",headers:bearer(token)});
+export const getReferralDashboard=(token:string)=>apiRequest<ReferralDashboard>("/api/referrals/dashboard",{headers:bearer(token)});
+export const getReferralShare=(token:string)=>apiRequest<ShareInfo>("/api/referrals/share",{headers:bearer(token)});
+export const getReferralHistory=(token:string)=>apiRequest<{history:{type:string;message:string;amount:number;date:string;property_name?:string}[]}>("/api/referrals/history",{headers:bearer(token)});
+export const getReferralUpis=(token:string)=>apiRequest<{upi_ids:ReferralUpi[]}>("/api/referrals/upi-ids",{headers:bearer(token)});
+export const addReferralUpi=(token:string,mobileNumber:string,beneficiaryName:string,makeDefault=false)=>apiRequest<{success:true;upi:ReferralUpi}>("/api/referrals/upi-ids",{method:"POST",headers:bearer(token),body:{upi_id:mobileNumber,beneficiary_name:beneficiaryName,make_default:makeDefault}});
+export const editReferralUpi=(token:string,id:number,mobileNumber:string,beneficiaryName:string)=>apiRequest<{success:true;upi:ReferralUpi}>(`/api/referrals/upi-ids/${id}`,{method:"PUT",headers:bearer(token),body:{upi_id:mobileNumber,beneficiary_name:beneficiaryName}});
+export const setDefaultReferralUpi=(token:string,id:number)=>apiRequest<{success:true}>(`/api/referrals/upi-ids/${id}/set-default`,{method:"PUT",headers:bearer(token)});
+export const deleteReferralUpi=(token:string,id:number)=>apiRequest<{success:true}>(`/api/referrals/upi-ids/${id}`,{method:"DELETE",headers:bearer(token)});
+export const getPendingReferralWithdrawals=(token:string)=>apiRequest<{pending_withdrawals:{id:number;amount:number;upi_id:string;status:string;created_at:string}[]}>("/api/referrals/pending-withdrawals",{headers:bearer(token)});
+export const withdrawReferral=(token:string,amount:number,upiId:string)=>apiRequest<{success:true;message:string}>("/api/referrals/withdraw",{method:"POST",headers:bearer(token),body:{amount,upi:upiId}});
+
+export const getOwnerB2BPartners=(token:string)=>apiRequest<{found:true;list:OwnerB2BPartner[]}>("/api/referrals/owner/b2b-list",{headers:bearer(token)});
+export const createOwnerB2BPartner=(token:string,body:{username:string;mobile:string;referral_code?:string})=>apiRequest<{success:true;data:OwnerB2BPartner}>("/api/referrals/owner/b2b-create",{method:"POST",headers:bearer(token),body});
+export const hideOwnerB2BPartner=(token:string,id:number)=>apiRequest<{success:true}>("/api/referrals/owner/b2b-hide",{method:"POST",headers:bearer(token),body:{id}});
+export const deleteOwnerB2BPartner=(token:string,id:number)=>apiRequest<{success:true}>("/api/referrals/owner/b2b-delete",{method:"POST",headers:bearer(token),body:{id}});
+
+export const getAdminReferrals=(token:string)=>apiRequest<AdminReferral[]>("/api/referrals/admin/all",{headers:bearer(token)});
+export const createAdminReferral=(token:string,body:{username:string;referral_otp_number:string;referral_code:string;referral_type:"owner"|"b2b"|"owners_b2b";property_id?:string;owner_referral_code?:string})=>apiRequest<{success:true;data:AdminReferral}>("/api/referrals/admin/create",{method:"POST",headers:bearer(token),body});
+export const updateAdminReferralStatus=(token:string,userId:number,status:"active"|"blocked")=>apiRequest<AdminReferral>("/api/referrals/admin/update-status",{method:"POST",headers:bearer(token),body:{userId,status}});
+export const deleteAdminReferral=(token:string,userId:number)=>apiRequest<{success:true}>("/api/referrals/admin/delete",{method:"POST",headers:bearer(token),body:{userId}});
