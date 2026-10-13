@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { LogIn, Eye, EyeOff, Loader2, Sparkles, Shield, SmartphoneNfc, ArrowLeft } from "lucide-react";
+import { LogIn, Eye, EyeOff, Loader2, Sparkles, Shield, SmartphoneNfc, ArrowLeft, Code2 } from "lucide-react";
 import { adminPaths } from "@/lib/adminPaths";
+import { isAdminDeveloperMode, startAdminDeveloperSession } from "@/lib/developerAccess";
 
 type Step = "credentials" | "totp";
 
@@ -25,7 +26,7 @@ const AdminLogin = () => {
 
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
-    if (token) {
+    if (token || isAdminDeveloperMode()) {
       navigate(adminPaths.dashboard);
     }
     setIsCheckingAuth(false);
@@ -143,6 +144,15 @@ const AdminLogin = () => {
     setTotpCode("");
   };
 
+  const handleDeveloperAccess = () => {
+    startAdminDeveloperSession();
+    toast({
+      title: "Developer preview enabled",
+      description: "You are viewing the dashboard with local demo data.",
+    });
+    navigate(adminPaths.dashboard);
+  };
+
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -258,6 +268,24 @@ const AdminLogin = () => {
                   )}
                 </Button>
               </form>
+
+              <div className="relative my-6" aria-hidden="true">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border/40" /></div>
+                <div className="relative flex justify-center"><span className="bg-card px-3 text-xs text-muted-foreground">Developer tools</span></div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDeveloperAccess}
+                className="w-full min-h-12 rounded-xl border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10"
+              >
+                <Code2 className="w-5 h-5 mr-2 text-primary" />
+                Open developer preview
+              </Button>
+              <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
+                Read-only preview using local demo properties. No production admin token is created.
+              </p>
             </>
           ) : (
             <>

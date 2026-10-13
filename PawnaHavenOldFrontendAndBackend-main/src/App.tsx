@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import ScrollRestoration from "./components/ScrollRestoration";
 import PageSkeleton from "./components/PageSkeleton";
@@ -21,6 +21,8 @@ const InformationPage = lazy(() => import("./pages/InformationPage"));
 const ReferralPage = lazy(() => import("./pages/ReferralPage"));
 const GenerateCodePage = lazy(() => import("./pages/GenerateCodePage"));
 const CheckEarningPage = lazy(() => import("./pages/CheckEarningPage"));
+const ReferralLogin = lazy(() => import("./pages/referral/ReferralLogin"));
+const ReferralDashboard = lazy(() => import("./pages/referral/ReferralDashboard"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const AdminRevenuePage = lazy(() => import("./pages/AdminRevenuePage"));
@@ -120,9 +122,12 @@ const App = () => {
               <Route path="/referral" element={<PageWrapper><ReferralPage /></PageWrapper>} />
               <Route path="/referral/generate" element={<PageWrapper><GenerateCodePage /></PageWrapper>} />
               <Route path="/referral/check" element={<PageWrapper><CheckEarningPage /></PageWrapper>} />
+              <Route path="/referral/login" element={<PageWrapper><ReferralLogin /></PageWrapper>} />
+              <Route path="/referral/dashboard" element={<PageWrapper><ReferralDashboard /></PageWrapper>} />
               <Route path="/payment-processing" element={<PageWrapper><PaymentProcessing /></PageWrapper>} />
 
               {/* Admin Routes */}
+              <Route path="/admin" element={<Navigate to={adminPaths.login} replace />} />
               <Route path={adminPaths.login} element={<PageWrapper><AdminLogin /></PageWrapper>} />
               <Route path={adminPaths.dashboard} element={<PageWrapper><AdminDashboard /></PageWrapper>} />
               <Route path={adminPaths.revenue} element={<PageWrapper><AdminRevenuePage /></PageWrapper>} />

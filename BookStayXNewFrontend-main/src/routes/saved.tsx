@@ -20,13 +20,14 @@ export const Route = createFileRoute("/saved")({
 });
 
 const categories: {
-  id: "all" | Extract<PropertyCategory, "villas" | "camping" | "hotel">;
+  id: "all" | PropertyCategory;
   label: string;
 }[] = [
-  { id: "all", label: "All" },
-  { id: "villas", label: "Villas" },
-  { id: "camping", label: "Camping & Cottages" },
-  { id: "hotel", label: "Hotel Rooms" },
+  { id: "all", label: "All Stays" },
+  { id: "villa", label: "Villa" },
+  { id: "camping_cottages", label: "Camping & Cottages" },
+  { id: "resort", label: "Resort" },
+  { id: "homestay", label: "Homestay" },
 ];
 
 function SavedPage() {

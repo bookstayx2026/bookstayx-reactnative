@@ -30,13 +30,14 @@ function amenityIcon(label: string) {
 
 function badgeTone(category: PropertyCategory) {
   switch (category) {
-    case "villas":
+    case "villa":
       return "bg-[#1F6B45] text-white";
-    case "camping":
-    case "campings":
+    case "camping_cottages":
       return "bg-[#6B3FA0] text-white";
-    case "hotel":
+    case "resort":
       return "bg-[#C45C2A] text-white";
+    case "homestay":
+      return "bg-[#0284C7] text-white";
     default:
       return "bg-black/55 text-white";
   }
@@ -164,12 +165,13 @@ export function SavedCategoryIcon({
   id,
   className,
 }: {
-  id: "all" | "villas" | "camping" | "hotel";
+  id: "all" | PropertyCategory;
   className?: string;
 }) {
-  if (id === "villas") return <Home className={className} strokeWidth={1.7} />;
-  if (id === "camping") return <Tent className={className} strokeWidth={1.7} />;
-  if (id === "hotel") return <BedDouble className={className} strokeWidth={1.7} />;
+  if (id === "villa") return <Home className={className} strokeWidth={1.7} />;
+  if (id === "camping_cottages") return <Tent className={className} strokeWidth={1.7} />;
+  if (id === "resort") return <BedDouble className={className} strokeWidth={1.7} />;
+  if (id === "homestay") return <Home className={className} strokeWidth={1.7} />;
   return (
     <svg viewBox="0 0 16 16" className={className} aria-hidden>
       <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.4" />

@@ -6,12 +6,12 @@ import {
   Building2,
   ChevronDown,
   Gem,
-  Hotel,
+  Home,
   LayoutGrid,
   MapPin,
   Settings2,
+  Sparkles,
   Tent,
-  Trees,
 } from "lucide-react";
 import { AppTopNav } from "@/components/AppTopNav";
 import { PropertyGridCard } from "@/components/PropertyGridCard";
@@ -52,11 +52,11 @@ const categories: {
   label: string;
   Icon: typeof LayoutGrid;
 }[] = [
-  { id: "all", label: "All", Icon: LayoutGrid },
-  { id: "villas", label: "Villas", Icon: Building2 },
-  { id: "camping", label: "Camping & Cottages", Icon: Tent },
-  { id: "hotel", label: "Hotel Rooms", Icon: Hotel },
-  { id: "campings", label: "Campings", Icon: Trees },
+  { id: "all", label: "All Properties", Icon: LayoutGrid },
+  { id: "villa", label: "Villa", Icon: Building2 },
+  { id: "camping_cottages", label: "Camping & Cottages", Icon: Tent },
+  { id: "resort", label: "Resort", Icon: Sparkles },
+  { id: "homestay", label: "Homestay", Icon: Home },
 ];
 
 const tiers: { id: PropertyTier; label: string }[] = [

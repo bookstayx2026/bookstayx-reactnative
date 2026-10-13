@@ -38,6 +38,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { DialogClose } from "@/components/ui/dialog";
+import { isReferralDeveloperMode } from "@/lib/developerAccess";
+import {
+  demoReferralDashboard,
+  demoReferralHistory,
+  demoReferralInProcess,
+  demoReferralUpiIds,
+} from "@/data/demoReferral";
 
 interface DashboardData {
   username: string;
@@ -99,6 +106,10 @@ const validateMobile = (mobile: string) => {
 
 const ReferralDashboard = () => {
   const navigate = useNavigate();
+  const developerPreview = isReferralDeveloperMode();
+  const loginPath = window.location.pathname.startsWith("/referral/")
+    ? "/referral/login"
+    : "/login";
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [shareData, setShareData] = useState<ShareData | null>(null);
@@ -128,9 +139,31 @@ const ReferralDashboard = () => {
   const getToken = () => localStorage.getItem("referral_token");
 
   useEffect(() => {
+    if (developerPreview) {
+      setDashboard(demoReferralDashboard);
+      setShareData({
+        referralCode: demoReferralDashboard.referral_code,
+        referralLink: `${window.location.origin}/?ref=${demoReferralDashboard.referral_code}`,
+        referralQrCode: "",
+        referralType: demoReferralDashboard.referral_type,
+        linkedPropertySlug: null,
+      });
+      setInProcess(demoReferralInProcess);
+      setInProcessAmount(
+        demoReferralInProcess.reduce(
+          (total, booking) => total + booking.referrer_commission,
+          0,
+        ),
+      );
+      setHistoryItems(demoReferralHistory);
+      setUpiList(demoReferralUpiIds);
+      setLoading(false);
+      return;
+    }
+
     const token = getToken();
     if (!token) {
-      navigate("/login", { replace: true });
+      navigate(loginPath, { replace: true });
       return;
     }
     fetchAll(token);
@@ -215,6 +248,10 @@ const ReferralDashboard = () => {
   const defaultUpi = upiList.find((u) => u.is_default) || null;
 
   const handleWithdraw = async () => {
+    if (developerPreview) {
+      toast.info("Withdrawals are disabled in developer preview.");
+      return;
+    }
     const token = getToken();
     if (!token || !dashboard) return;
 
@@ -269,6 +306,10 @@ const ReferralDashboard = () => {
   };
 
   const handleAddUpi = async () => {
+    if (developerPreview) {
+      toast.info("Payment details are read-only in developer preview.");
+      return;
+    }
     const token = getToken();
     if (!token) return;
     if (!validateMobile(addUpiField1)) {
@@ -328,6 +369,10 @@ const ReferralDashboard = () => {
   };
 
   const handleEditUpi = async (id: number) => {
+    if (developerPreview) {
+      toast.info("Payment details are read-only in developer preview.");
+      return;
+    }
     const token = getToken();
     if (!token) return;
     if (!validateMobile(editUpiField1)) {
@@ -359,6 +404,10 @@ const ReferralDashboard = () => {
   };
 
   const handleSetDefaultUpi = async (id: number) => {
+    if (developerPreview) {
+      toast.info("Payment details are read-only in developer preview.");
+      return;
+    }
     const token = getToken();
     if (!token) return;
     try {
@@ -379,6 +428,10 @@ const ReferralDashboard = () => {
   };
 
   const handleDeleteUpi = async (id: number) => {
+    if (developerPreview) {
+      toast.info("Payment details are read-only in developer preview.");
+      return;
+    }
     const token = getToken();
     if (!token) return;
     try {
@@ -412,7 +465,8 @@ const ReferralDashboard = () => {
     }
     localStorage.removeItem("referral_token");
     localStorage.removeItem("referral_refresh_token");
-    navigate("/login", { replace: true });
+    localStorage.removeItem("referralDeveloperMode");
+    navigate(loginPath, { replace: true });
   };
 
   const handleCopy = (text: string, label: string) => {
@@ -464,6 +518,12 @@ const ReferralDashboard = () => {
         <title>Dashboard - Referral</title>
         <meta name="robots" content="noindex,nofollow" />
       </Helmet>
+
+      {developerPreview && (
+        <div className="bg-[#F59E0B] px-4 py-2 text-center text-xs font-semibold text-black">
+          Referral developer preview · Sample earnings and history · Withdrawals are disabled
+        </div>
+      )}
 
       <div className="sticky top-0 z-50 bg-black border-b border-border/50">
         <div className="container mx-auto px-6 py-4 flex items-center justify-between gap-4">

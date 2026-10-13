@@ -30,6 +30,7 @@ import {
   useOwnerTheme,
   OwnerThemeProvider,
 } from "@/contexts/OwnerThemeContext";
+import { isOwnerDeveloperMode } from "@/lib/developerAccess";
 
 const OwnerLayoutInner = () => {
   const navigate = useNavigate();
@@ -161,6 +162,11 @@ const OwnerLayoutInner = () => {
         isLight ? "bg-[#F9F5F0]" : "bg-black",
       )}
     >
+      {isOwnerDeveloperMode() && (
+        <div className="bg-[#F59E0B] px-4 py-2 text-center text-xs font-semibold text-black">
+          Owner developer preview · Demo villa workspace · Production changes require a real owner login
+        </div>
+      )}
       <header
         className={cn(
           "border-b border-[#F59E0B]/20 px-3 py-3 sticky top-0 z-[60] shadow-2xl transition-colors duration-300",

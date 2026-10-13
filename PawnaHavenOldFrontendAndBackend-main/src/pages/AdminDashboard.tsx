@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { adminPaths } from "@/lib/adminPaths";
 import { serverLogout } from "@/lib/authFetch";
+import { clearDeveloperSessions, isAdminDeveloperMode } from "@/lib/developerAccess";
+import { demoCategorySettings, demoProperties } from "@/data/demoProperties";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -741,6 +743,14 @@ const AdminDashboard = () => {
       const token = localStorage.getItem("adminToken");
       const adminData = localStorage.getItem("adminUser");
 
+      if (isAdminDeveloperMode()) {
+        setUser(adminData ? JSON.parse(adminData) : { email: "developer@preview.local" });
+        setProperties(demoProperties);
+        setCategorySettings(demoCategorySettings);
+        setIsLoading(false);
+        return;
+      }
+
       if (!token || !adminData) {
         navigate(adminPaths.login);
         return;
@@ -802,6 +812,7 @@ const AdminDashboard = () => {
 
   const handleLogout = () => {
     serverLogout();
+    clearDeveloperSessions();
     toast({
       title: "Logged out",
       description: "You have been Logged-out successfully.",
@@ -998,6 +1009,11 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-charcoal text-foreground pb-24">
+      {isAdminDeveloperMode() && (
+        <div className="bg-[#F59E0B] px-4 py-2 text-center text-xs font-semibold text-black">
+          Developer preview · Local demo data · Production actions require a real admin login
+        </div>
+      )}
       {/* Header (KEEP AS IS) */}
       <header className="glass-dark border-b border-white/5 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">

@@ -50,6 +50,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
+import { demoProperties } from "@/data/demoProperties";
 
 const formatPrice = (price: string | number) => {
   const num =
@@ -170,6 +171,7 @@ interface PropertyDetail {
   is_available: boolean;
   property_id: string;
   units?: PropertyUnit[];
+  is_demo?: boolean;
 }
 
 import { CalendarSync } from "@/components/CalendarSync";
@@ -195,6 +197,35 @@ const PropertyDetails = () => {
     const fetchProperty = async () => {
       try {
         if (!propertyId) return;
+
+        const demoProperty = demoProperties.find(
+          (property) => property.slug === propertyId,
+        );
+        if (demoProperty) {
+          setPropertyData({
+            ...demoProperty,
+            priceNote: demoProperty.price_note,
+            highlights: [
+              "Curated developer-preview stay",
+              "Scenic location near Pawna Lake",
+              "Suitable for weekend groups and families",
+            ],
+            activities: ["Sightseeing", "Outdoor games", "Evening gathering"],
+            policies: [
+              "Government-issued ID is required at check-in.",
+              "This is a demo listing; contact the host to confirm availability.",
+              "Please respect the property and local quiet hours.",
+            ],
+            check_in_time: "2:00 PM",
+            check_out_time: "11:00 AM",
+            contact: "+918806092609",
+            owner_whatsapp_number: "+918806092609",
+            owner_name: "PawnaHavenCamp Preview Host",
+            units: [],
+          });
+          return;
+        }
+
         const response = await propertyAPI.getPublicBySlug(propertyId);
         if (response.success) {
           const p = response.data;

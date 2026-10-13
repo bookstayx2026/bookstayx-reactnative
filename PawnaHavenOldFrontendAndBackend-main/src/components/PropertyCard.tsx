@@ -35,6 +35,7 @@ interface PropertyCardProps {
   isTopSelling?: boolean;
   isAvailable?: boolean;
   unitId?: number;
+  isDemo?: boolean;
 }
 
 const PropertyCard = ({
@@ -53,6 +54,7 @@ const PropertyCard = ({
   isTopSelling,
   isAvailable = true,
   unitId,
+  isDemo = false,
 }: PropertyCardProps) => {
   const navigate = useNavigate();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -218,6 +220,12 @@ const PropertyCard = ({
               </div>
             ))}
           </div>
+
+          {isDemo && (
+            <Badge className="absolute left-3 top-3 z-30 border border-white/20 bg-black/75 text-white hover:bg-black/75">
+              Demo listing
+            </Badge>
+          )}
 
           {/* NAV ARROWS */}
           {displayImages.length > 1 && (

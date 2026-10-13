@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useOtpAutoFill } from "@/hooks/useOtpAutoFill";
 import { Helmet } from "react-helmet-async";
-import { ShieldCheck, Lock, Send, Loader2, RefreshCw } from "lucide-react";
+import { ShieldCheck, Lock, Send, Loader2, RefreshCw, Code2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,12 +9,16 @@ import { Label } from "@/components/ui/label";
 import axios from "axios";
 import { toast } from "sonner";
 import { useNavigate, Link } from "react-router-dom";
+import { isReferralDeveloperMode, startReferralDeveloperSession } from "@/lib/developerAccess";
 
 const COOLDOWN_SECONDS = 30;
 const RATE_LIMIT = 4;
 
 const ReferralLogin = () => {
   const navigate = useNavigate();
+  const dashboardPath = window.location.pathname.startsWith("/referral/")
+    ? "/referral/dashboard"
+    : "/dashboard";
   const [step, setStep] = useState<"verify" | "otp">("verify");
   const [loading, setLoading] = useState(false);
   const [mobile, setMobile] = useState("");
@@ -25,8 +29,8 @@ const ReferralLogin = () => {
 
   useEffect(() => {
     const token = localStorage.getItem("referral_token");
-    if (token) {
-      navigate("/dashboard", { replace: true });
+    if (token || isReferralDeveloperMode()) {
+      navigate(dashboardPath, { replace: true });
     }
   }, [navigate]);
 
@@ -117,7 +121,7 @@ const ReferralLogin = () => {
       localStorage.setItem("referral_token", finalToken);
       if (loginRes.data.refreshToken) localStorage.setItem("referral_refresh_token", loginRes.data.refreshToken);
       toast.success("Login successful!");
-      navigate("/dashboard", { replace: true });
+      navigate(dashboardPath, { replace: true });
     } catch (error: any) {
       toast.error(
         error.response?.data?.message ||
@@ -139,6 +143,12 @@ const ReferralLogin = () => {
   }, [otp, step]);
 
   const limitReached = otpLimitLeft !== null && otpLimitLeft <= 0;
+
+  const handleDeveloperAccess = () => {
+    startReferralDeveloperSession();
+    toast.success("Referral developer preview enabled");
+    navigate(dashboardPath, { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
@@ -203,6 +213,24 @@ const ReferralLogin = () => {
                     </>
                   )}
                 </Button>
+
+                <div className="relative py-2" aria-hidden="true">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border/50" /></div>
+                  <div className="relative flex justify-center"><span className="bg-card px-3 text-xs text-muted-foreground">Developer tools</span></div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDeveloperAccess}
+                  className="w-full min-h-12 rounded-xl border-[#F59E0B]/40 bg-[#F59E0B]/5 text-white hover:bg-[#F59E0B]/10 hover:text-white"
+                >
+                  <Code2 className="w-5 h-5 mr-2 text-[#F59E0B]" />
+                  Open referral developer preview
+                </Button>
+                <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                  Read-only demo partner with sample earnings and history.
+                </p>
 
                 <div className="text-center pt-2">
                   <Link

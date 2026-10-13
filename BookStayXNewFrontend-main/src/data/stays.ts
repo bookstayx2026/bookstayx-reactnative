@@ -1,6 +1,6 @@
 import { IMG } from "@/lib/images";
 
-export type StayCategory = "villas" | "camping" | "hotel";
+export type StayCategory = "villa" | "camping_cottages" | "resort" | "homestay";
 export type StayTier = "affordable" | "premium" | "luxury";
 
 export type Amenity = { icon: "bed" | "tent" | "lake" | "pool" | "fire" | "mountain" | "parking" | "wifi" | "coffee" | "meals" | "lawn" | "cottage"; label: string };
@@ -26,9 +26,10 @@ export type Stay = {
 };
 
 const badgeFor: Record<StayCategory, string> = {
-  villas: "VILLA",
-  camping: "CAMPING & COTTAGES",
-  hotel: "HOTEL ROOMS",
+  villa: "VILLA",
+  camping_cottages: "CAMPING & COTTAGES",
+  resort: "RESORT",
+  homestay: "HOMESTAY",
 };
 
 function make(s: Omit<Stay, "badge" | "gallery" | "about" | "highlights" | "guests" | "checkIn"> & Partial<Stay>): Stay {
@@ -47,7 +48,7 @@ export const stays: Stay[] = [
   make({
     id: "pawna-lakeview-villa",
     name: "Pawna Lakeview Villa",
-    category: "villas",
+    category: "villa",
     tier: "premium",
     location: "Pawna Lake, Lonavala",
     locationSlug: "pawna-lake",
@@ -64,7 +65,7 @@ export const stays: Stay[] = [
   make({
     id: "sunset-glamping-tents",
     name: "Sunset Glamping Tents",
-    category: "camping",
+    category: "camping_cottages",
     tier: "affordable",
     location: "Pawna Lake, Lonavala",
     locationSlug: "pawna-lake",
@@ -81,7 +82,7 @@ export const stays: Stay[] = [
   make({
     id: "hilltop-ac-cottages",
     name: "Hilltop AC Cottages",
-    category: "camping",
+    category: "camping_cottages",
     tier: "affordable",
     location: "Khandala, Maval Region",
     locationSlug: "lonavala",
@@ -98,7 +99,7 @@ export const stays: Stay[] = [
   make({
     id: "misty-mountain-resort",
     name: "The Misty Mountain Resort",
-    category: "hotel",
+    category: "resort",
     tier: "premium",
     location: "Khandala, Maval Region",
     locationSlug: "lonavala",
@@ -115,7 +116,7 @@ export const stays: Stay[] = [
   make({
     id: "pawna-lake-camping",
     name: "Pawna Lake Camping",
-    category: "camping",
+    category: "camping_cottages",
     tier: "affordable",
     location: "Pawna Lake, Lonavala",
     locationSlug: "pawna-lake",
@@ -132,7 +133,7 @@ export const stays: Stay[] = [
   make({
     id: "forest-view-luxury-villa",
     name: "Forest View Luxury Villa",
-    category: "villas",
+    category: "villa",
     tier: "luxury",
     location: "Lonavala, Maval Region",
     locationSlug: "lonavala",
@@ -149,7 +150,7 @@ export const stays: Stay[] = [
   make({
     id: "lakeside-infinity-retreat",
     name: "Lakeside Infinity Retreat",
-    category: "villas",
+    category: "villa",
     tier: "luxury",
     location: "Pawna Lake, Lonavala",
     locationSlug: "pawna-lake",
@@ -166,7 +167,7 @@ export const stays: Stay[] = [
   make({
     id: "valley-boutique-rooms",
     name: "Valley Boutique Rooms",
-    category: "hotel",
+    category: "resort",
     tier: "premium",
     location: "Lonavala, Maval Region",
     locationSlug: "lonavala",
@@ -185,10 +186,11 @@ export const stays: Stay[] = [
 export const getStay = (id: string) => stays.find((s) => s.id === id);
 
 export const categoryPills: { key: StayCategory | "all"; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "villas", label: "Villas" },
-  { key: "camping", label: "Camping & Cottages" },
-  { key: "hotel", label: "Hotel Rooms" },
+  { key: "all", label: "All Properties" },
+  { key: "villa", label: "Villa" },
+  { key: "camping_cottages", label: "Camping & Cottages" },
+  { key: "resort", label: "Resort" },
+  { key: "homestay", label: "Homestay" },
 ];
 
 export const tierPills: { key: StayTier; label: string }[] = [

@@ -12,12 +12,14 @@ import {
   CircleCheck,
   Zap,
   Loader2,
+  Code2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import axios from "axios";
+import { startReferralDeveloperSession } from "@/lib/developerAccess";
 
 interface Earner {
   username: string;
@@ -33,6 +35,11 @@ const ReferralPage = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
 
+  const handleDeveloperDashboard = () => {
+    startReferralDeveloperSession();
+    navigate("/referral/dashboard");
+  };
+
   useEffect(() => {
     const fetchTopEarners = async () => {
       setLoading(true);
@@ -41,9 +48,15 @@ const ReferralPage = () => {
         const response = await axios.get(
           `/api/referrals/top-earners?period=${period}`,
         );
-        setEarners(response.data);
+        const responseEarners = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray(response.data?.earners)
+            ? response.data.earners
+            : [];
+        setEarners(responseEarners);
       } catch (error) {
         console.error("Error fetching top earners:", error);
+        setEarners([]);
       } finally {
         setLoading(false);
       }
@@ -72,7 +85,7 @@ const ReferralPage = () => {
 
         {/* Fixed Row Options */}
         <div className="px-6 pb-4 bg-black border-b border-border/30">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Card
               onClick={() => navigate("/referral/check")}
               className="p-3 bg-green-600 text-white border-green-500/50 hover:bg-green-700 transition-all cursor-pointer group rounded-2xl flex items-center gap-2"
@@ -102,6 +115,19 @@ const ReferralPage = () => {
                 <p className="text-[10px] text-primary-foreground/80 truncate">
                   Generate
                 </p>
+              </div>
+            </Card>
+
+            <Card
+              onClick={handleDeveloperDashboard}
+              className="p-3 bg-secondary text-foreground border-[#F59E0B]/30 hover:bg-[#F59E0B]/10 transition-all cursor-pointer group rounded-2xl flex items-center gap-2"
+            >
+              <div className="w-8 h-8 rounded-lg bg-[#F59E0B]/15 flex items-center justify-center text-[#F59E0B] shrink-0">
+                <Code2 className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-xs truncate">Developer Dashboard</h3>
+                <p className="text-[10px] text-muted-foreground truncate">View demo earnings</p>
               </div>
             </Card>
           </div>

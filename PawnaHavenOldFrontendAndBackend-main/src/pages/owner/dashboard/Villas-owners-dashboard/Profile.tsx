@@ -28,6 +28,8 @@ const OwnerProfile = () => {
     setLogoutOpen(false);
     localStorage.removeItem("ownerToken");
     localStorage.removeItem("ownerData");
+    localStorage.removeItem("ownerLoggedIn");
+    localStorage.removeItem("ownerDeveloperMode");
     toast.success("Logged out successfully");
     navigate("/owner/login");
   };

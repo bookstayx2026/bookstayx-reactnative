@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Sparkles, Shield, Loader2, RefreshCw } from "lucide-react";
+import { Sparkles, Shield, Loader2, RefreshCw, Code2 } from "lucide-react";
+import { startOwnerDeveloperSession } from "@/lib/developerAccess";
 
 const COOLDOWN_SECONDS = 30;
 const RATE_LIMIT = 4;
@@ -135,6 +136,12 @@ const OwnerLogin = () => {
   }, [otp, showOTP]);
 
   const limitReached = otpLimitLeft !== null && otpLimitLeft <= 0;
+
+  const handleDeveloperAccess = () => {
+    startOwnerDeveloperSession();
+    toast.success("Developer preview enabled");
+    navigate("/owner/dashboard");
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background relative overflow-hidden p-4">
@@ -306,6 +313,27 @@ const OwnerLogin = () => {
                 Change mobile number
               </Button>
             </form>
+          )}
+
+          {!showOTP && (
+            <>
+              <div className="relative my-6" aria-hidden="true">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border/40" /></div>
+                <div className="relative flex justify-center"><span className="bg-card px-3 text-xs text-muted-foreground">Developer tools</span></div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDeveloperAccess}
+                className="w-full min-h-12 rounded-xl border-[#F59E0B]/40 bg-[#F59E0B]/5 text-foreground hover:bg-[#F59E0B]/10"
+              >
+                <Code2 className="w-5 h-5 mr-2 text-[#F59E0B]" />
+                Open owner developer preview
+              </Button>
+              <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
+                Demo villa workspace. No production owner session is created.
+              </p>
+            </>
           )}
         </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import PropertyCard from "./PropertyCard";
 import { propertyAPI } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
+import { demoProperties } from "@/data/demoProperties";
 
 const categoryLabels: Record<string, string> = {
   all: "All Stays",
@@ -53,10 +54,14 @@ const Properties = () => {
       try {
         const response = await propertyAPI.getPublicList();
         if (response.success) {
-          setProperties(response.data);
+          const liveProperties = Array.isArray(response.data) ? response.data : [];
+          setProperties([...liveProperties, ...demoProperties]);
+        } else {
+          setProperties(demoProperties);
         }
       } catch (error) {
         console.error("Failed to fetch properties:", error);
+        setProperties(demoProperties);
       } finally {
         setLoading(false);
       }
@@ -157,7 +162,7 @@ const Properties = () => {
             </span>
             <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground">
               Explore Our{" "}
-              <span className="bg-gradient-to-r from-[#F59E0B] to-[#d97706] bg-clip-text text-transparent italic">
+              <span className="text-primary italic">
                 Properties
               </span>
             </h2>
@@ -278,6 +283,7 @@ const Properties = () => {
                     isTopSelling={property.is_top_selling}
                     isAvailable={property.is_available}
                     unitId={property._isUnitCard ? property._unitId : undefined}
+                    isDemo={property.is_demo}
                   />
                 </div>
               );
