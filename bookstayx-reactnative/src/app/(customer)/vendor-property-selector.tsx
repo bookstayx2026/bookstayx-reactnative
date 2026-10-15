@@ -26,11 +26,13 @@ function getCategoryIcon(iconType: PropertyCategoryConfig["iconType"], size = 26
 export default function VendorPropertySelectorScreen() {
   const { onScroll } = useCustomerChrome();
   const { ready, session, signIn } = useAuth();
+  const demoLoginEnabled = process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === "true";
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   if (!ready) return <View style={styles.loading}><ActivityIndicator color={colors.gold} /></View>;
   if (session?.role === "owner") return <Redirect href="/owner" />;
+  if (!demoLoginEnabled) return <Redirect href="/owner-login" />;
 
   const handleSelectCategory = async (cat: PropertyCategoryConfig) => {
     setError("");
@@ -57,13 +59,13 @@ export default function VendorPropertySelectorScreen() {
       </Pressable>
 
       <View style={styles.intro}>
-        <Text style={styles.welcome}>VENDOR DEVELOPMENT ACCESS</Text>
+        <Text style={styles.welcome}>OWNER & VENDOR DEMO ACCESS</Text>
         <Text style={styles.title}>Select Property Category</Text>
         <Text style={styles.subtitle}>
           Choose a property category below to test BookStayX Owner CRM with isolated units, calendar tariffs, and guest bookings.
         </Text>
         <View style={styles.devBadge}>
-          <Text style={styles.devNotice}>Development one-click login is active</Text>
+          <Text style={styles.devNotice}>Demo one-click login is active</Text>
         </View>
       </View>
 

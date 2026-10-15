@@ -69,8 +69,7 @@ const env = Object.freeze({
   databasePoolMax: parsePositiveInteger(process.env.DATABASE_POOL_MAX, 10),
   corsOrigins: parseCorsOrigins(),
   enableBackgroundJobs: process.env.ENABLE_BACKGROUND_JOBS === 'true',
-  enableDevLogin:
-    process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_LOGIN === 'true',
+  enableDevLogin: process.env.ENABLE_DEV_LOGIN === 'true',
   paymentProvider: process.env.PAYMENT_PROVIDER === 'razorpay' ? 'razorpay' : 'mock',
   payoutProvider: process.env.PAYOUT_PROVIDER === 'razorpayx' ? 'razorpayx' : 'manual',
 });

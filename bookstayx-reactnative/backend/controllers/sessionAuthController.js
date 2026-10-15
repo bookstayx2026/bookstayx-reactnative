@@ -6,6 +6,7 @@ const { env } = require('../src/config/env');
 const { generateToken, JWT_SECRET } = require('../utils/jwt');
 const { OtpService } = require('../services/otpService');
 const { RefreshTokenRepository } = require('../repositories/refreshTokenRepository');
+const { getDemoOwnerPropertyId, isDevelopmentLoginAllowed } = require('../src/config/demo-owner');
 
 const cleanMobile = (value) => {
   const digits = String(value || '').replace(/\D/g, '');
@@ -110,8 +111,13 @@ async function session(req, res, next) {
 
 async function devLogin(req, res, next) {
   try {
-    if (!env.enableDevLogin) return res.status(404).json({ success: false, message: 'Development login is disabled.' });
     const role = String(req.body.role || '');
+    const isAllowed = isDevelopmentLoginAllowed({
+      enabled: env.enableDevLogin,
+      nodeEnv: env.nodeEnv,
+      role,
+    });
+    if (!isAllowed) return res.status(404).json({ success: false, message: 'Development login is disabled.' });
     let identity;
     let payload;
 
@@ -125,45 +131,28 @@ async function devLogin(req, res, next) {
       identity = result.rows[0];
       payload = { id: identity.id, mobile: identity.mobile };
     } else if (role === 'owner') {
-      const category = String(req.body.category || '').toLowerCase().trim();
-      let querySql = `
+      const demoPropertyId = getDemoOwnerPropertyId(req.body.category);
+      if (!demoPropertyId) {
+        return res.status(400).json({ success: false, message: 'Select a supported demo property category.' });
+      }
+
+      const result = await query(
+        `
         SELECT o.id, o.property_id, o.property_name AS "propertyName", o.owner_name,
                o.owner_otp_number AS "ownerNumber"
         FROM owners o
-        LEFT JOIN properties p ON p.property_id = o.property_id
-      `;
-      if (category === 'camping_cottages' || category === 'campings_cottages' || category === 'camping') {
-        querySql += ` WHERE p.category IN ('camping_cottages', 'campings_cottages', 'camping') OR o.property_type IN ('camping_cottages', 'campings_cottages', 'camping') OR o.property_id = 'BSX-CAMP01' ORDER BY o.id LIMIT 1`;
-      } else if (category === 'resort' || category === 'hotel') {
-        querySql += ` WHERE p.category IN ('resort', 'hotel') OR o.property_type IN ('resort', 'hotel') OR o.property_id = 'BSX-RESORT01' ORDER BY o.id LIMIT 1`;
-      } else if (category === 'homestay') {
-        querySql += ` WHERE p.category = 'homestay' OR o.property_type = 'homestay' OR o.property_id = 'BSX-HOMESTAY01' ORDER BY o.id LIMIT 1`;
-      } else if (category === 'villa') {
-        querySql += ` WHERE p.category = 'villa' OR o.property_type = 'villa' OR o.property_id = 'BSX-V001' ORDER BY o.id LIMIT 1`;
-      } else {
-        querySql += ` ORDER BY o.id LIMIT 1`;
-      }
-
-      let result = await query(querySql);
+        JOIN properties p ON p.property_id = o.property_id
+        WHERE o.property_id = $1
+          AND p.property_id = $1
+          AND p.is_active = true
+        LIMIT 1`,
+        [demoPropertyId]
+      );
       if (!result.rows.length) {
-        result = await query(
-          `SELECT id, property_id, property_name AS "propertyName", owner_name,
-                  owner_otp_number AS "ownerNumber"
-           FROM owners ORDER BY id LIMIT 1`
-        );
+        return res.status(409).json({ success: false, message: 'The selected demo property is not available.' });
       }
-      if (!result.rows.length) {
-        result = await query(
-          `INSERT INTO owners (property_id, property_name, property_type, owner_name, owner_otp_number, owner_whatsapp_number)
-           SELECT property_id, title, category, 'BookStayX Developer', '9999999992', '9999999992'
-           FROM properties WHERE property_id IS NOT NULL ORDER BY id LIMIT 1
-           RETURNING id, property_id, property_name AS "propertyName", owner_name,
-                     owner_otp_number AS "ownerNumber"`
-        );
-      }
-      if (!result.rows.length) return res.status(409).json({ success: false, message: 'Seed the property catalogue before using owner development login.' });
-      identity = result.rows[0];
-      payload = { id: identity.id, mobile: identity.ownerNumber };
+      identity = { ...result.rows[0], demoMode: true };
+      payload = { id: identity.id, mobile: identity.ownerNumber, demo: true, propertyId: demoPropertyId };
     } else if (role === 'admin') {
       let result = await query('SELECT id, email FROM admins ORDER BY id LIMIT 1');
       if (!result.rows.length) {

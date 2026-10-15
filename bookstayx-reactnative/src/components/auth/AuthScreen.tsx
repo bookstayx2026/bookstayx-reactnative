@@ -18,7 +18,8 @@ export function AuthScreen({ mode }: { mode: "owner" | "admin" }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const isOwner = mode === "owner";
-  const devLoginEnabled = __DEV__ && process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === "true";
+  const demoOwnerLoginEnabled = isOwner && process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === "true";
+  const localDevLoginEnabled = !isOwner && __DEV__ && process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === "true";
 
   const enterDevelopmentSession = async () => {
     setError("");
@@ -105,7 +106,8 @@ export function AuthScreen({ mode }: { mode: "owner" | "admin" }) {
             <Pressable disabled={busy} onPress={submit} style={({ pressed })=>[s.button,(pressed||busy)&&s.buttonPressed]}>
               {busy ? <ActivityIndicator color={colors.actionInk}/> : <><LockKeyhole size={17} color={colors.actionInk}/><Text style={s.buttonText}>{step === "credentials" ? isOwner ? "Send secure OTP" : "Continue securely" : "Verify and continue"}</Text></>}
             </Pressable>
-            {devLoginEnabled && step === "credentials" ? <Pressable disabled={busy} onPress={enterDevelopmentSession} style={({pressed})=>[s.devButton,pressed&&s.buttonPressed]}><Text style={s.devButtonText}>One-click {isOwner ? "Owner" : "Admin"} Login</Text><Text style={s.devCaption}>Development only</Text></Pressable> : null}
+            {demoOwnerLoginEnabled && step === "credentials" ? <Pressable disabled={busy} onPress={() => router.push("/vendor-property-selector")} style={({pressed})=>[s.devButton,pressed&&s.buttonPressed]}><Text style={s.devButtonText}>Open Demo Owner Dashboard</Text><Text style={s.devCaption}>No SMS OTP · isolated demo properties only</Text></Pressable> : null}
+            {localDevLoginEnabled && step === "credentials" ? <Pressable disabled={busy} onPress={enterDevelopmentSession} style={({pressed})=>[s.devButton,pressed&&s.buttonPressed]}><Text style={s.devButtonText}>One-click Admin Login</Text><Text style={s.devCaption}>Development only</Text></Pressable> : null}
             {step === "code" && isOwner ? <Pressable disabled={busy} onPress={()=>{setStep("credentials");setCode("");setError("");}} style={s.secondary}><Text style={s.secondaryText}>Change mobile number</Text></Pressable> : null}
           </View>
           <Text style={s.security}>Credentials are sent only to the configured BookStayX API and session tokens are encrypted on this device.</Text>

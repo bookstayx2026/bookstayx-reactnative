@@ -217,8 +217,15 @@ exports.getOwnerProperty = async (req, res) => {
         (SELECT json_agg(json_build_object('id', pi.id, 'image_url', pi.image_url, 'display_order', pi.display_order) ORDER BY pi.display_order)
          FROM property_images pi WHERE pi.property_id = p.id) as images
       FROM properties p
-      WHERE p.property_id = $1`,
-      [propertyId]
+      WHERE p.property_id = $1
+        AND (
+          $2 = 'admin'
+          OR EXISTS (
+            SELECT 1 FROM owners o
+            WHERE o.id = $3 AND o.property_id = p.property_id
+          )
+        )`,
+      [propertyId, req.user.role, req.user.id]
     );
 
     if (result.rows.length === 0) {

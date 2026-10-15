@@ -73,7 +73,8 @@ export default function LoginScreen() {
   const [infoMessage, setInfoMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const devLoginEnabled = __DEV__ && process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === "true";
+  const demoOwnerLoginEnabled = process.env.EXPO_PUBLIC_ENABLE_DEV_LOGIN === "true";
+  const localCustomerDevLoginEnabled = __DEV__ && demoOwnerLoginEnabled;
 
   if (!ready) {
     return (
@@ -92,7 +93,7 @@ export default function LoginScreen() {
   };
 
   const enterVendor = () => {
-    if (!devLoginEnabled) {
+    if (!demoOwnerLoginEnabled) {
       router.push("/owner-login");
       return;
     }
@@ -307,7 +308,7 @@ export default function LoginScreen() {
             onPress={enterVendor}
             loading={pendingRole === "owner"}
           />
-          {devLoginEnabled ? (
+          {localCustomerDevLoginEnabled ? (
             <Pressable onPress={handleDevLogin} style={styles.devButton}>
               <Text style={styles.devNotice}>⚡ Development one-click login</Text>
             </Pressable>
