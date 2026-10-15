@@ -45,16 +45,30 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     let data: unknown = null;
     try { data = raw ? JSON.parse(raw) : null; } catch { throw new ApiError("The server returned an unreadable response.", "INVALID_RESPONSE", response.status, raw); }
     if (!response.ok) {
-      const record = data && typeof data === "object" ? data as Record<string, unknown> : null;
+      const record = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
       let message = `Request failed with status ${response.status}.`;
+      let errorCode = "";
+
       if (typeof record?.message === "string") {
         message = record.message;
       } else if (typeof record?.error === "string") {
         message = record.error;
       } else if (record?.error && typeof record.error === "object") {
         const errObj = record.error as Record<string, unknown>;
+        errorCode = String(errObj.code || "");
         message = String(errObj.message || errObj.code || message);
       }
+
+      // Replace generic server-internal errors with user-friendly actionable messages
+      if (response.status === 503 || errorCode === "DATABASE_UNAVAILABLE") {
+        message = "The service is temporarily unavailable. Please try again in a few moments.";
+      } else if (
+        (response.status === 500 && (message === "An unexpected error occurred" || !message)) ||
+        errorCode === "INTERNAL_ERROR"
+      ) {
+        message = "The service encountered a temporary error. Please try again shortly or contact concierge support.";
+      }
+
       throw new ApiError(message, "HTTP", response.status, data);
     }
     return data as T;

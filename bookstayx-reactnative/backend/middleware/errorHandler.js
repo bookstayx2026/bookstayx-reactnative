@@ -11,6 +11,7 @@ const errorCodes = {
   FORBIDDEN: { status: 403, code: 'FORBIDDEN', message: 'Access denied' },
   CORS_ORIGIN_DENIED: { status: 403, code: 'CORS_ORIGIN_DENIED', message: 'Origin is not allowed by CORS' },
   DATABASE_ERROR: { status: 500, code: 'DATABASE_ERROR', message: 'Database operation failed' },
+  DATABASE_UNAVAILABLE: { status: 503, code: 'DATABASE_UNAVAILABLE', message: 'Database service is temporarily unavailable' },
   INTERNAL_ERROR: { status: 500, code: 'INTERNAL_ERROR', message: 'Internal server error' }
 };
 
@@ -34,6 +35,43 @@ const asyncHandler = (fn) => {
   };
 };
 
+const sanitizeErrorMessage = (message) => {
+  if (!message || typeof message !== 'string') return '';
+  return message.replace(/(:\/\/[^:]+):([^@]+)@/g, '$1:***@');
+};
+
+const isDatabaseError = (err) => {
+  if (!err) return false;
+  if (err.name === 'DatabaseError') return true;
+  if (typeof err.code === 'string') {
+    if (/^(08|28|3D|57)/i.test(err.code)) return true;
+    if (['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN'].includes(err.code)) return true;
+  }
+  if (typeof err.message === 'string') {
+    const msg = err.message.toLowerCase();
+    return (
+      msg.includes('connection terminated') ||
+      msg.includes('password authentication failed') ||
+      msg.includes('tenant or user not found') ||
+      msg.includes('connection timeout') ||
+      msg.includes('client has already been connected') ||
+      msg.includes('pool error')
+    );
+  }
+  return false;
+};
+
+const categorizeError = (err) => {
+  if (!err) return 'UNKNOWN';
+  if (err.status === 401 || err.code === 'UNAUTHORIZED') return 'AUTHENTICATION';
+  if (err.status === 403 || err.code === 'FORBIDDEN' || err.code === 'CORS_ORIGIN_DENIED') return 'AUTHORIZATION';
+  if (err.status === 404 || err.code?.includes('NOT_FOUND')) return 'NOT_FOUND';
+  if (err.status === 400 || err.code?.includes('INVALID') || err.code?.includes('MISSING')) return 'VALIDATION';
+  if (err.status === 429 || err.code?.includes('LIMIT')) return 'RATE_LIMIT';
+  if (isDatabaseError(err)) return 'DATABASE';
+  return 'INTERNAL_SERVER_ERROR';
+};
+
 const errorMiddleware = (err, req, res, next) => {
   const isInvalidJson = err instanceof SyntaxError && err.type === 'entity.parse.failed';
   const isPayloadTooLarge = err.type === 'entity.too.large' || err.status === 413;
@@ -47,20 +85,37 @@ const errorMiddleware = (err, req, res, next) => {
     });
   }
 
-  console.error(`[ERROR] ${err.code || 'UNKNOWN'}: ${err.message}`, {
-    path: req.path,
-    method: req.method,
-    details: err.details,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-  });
+  const category = categorizeError(err);
+  const isDbErr = isDatabaseError(err);
+  const status = err.isOperational ? err.status : (isDbErr ? 503 : 500);
+
+  // Safe diagnostic log — strictly records request path, status, and error category
+  // Absolutely NO passwords, OTPs, tokens, or personal data are logged
+  console.error(
+    `[DIAGNOSTIC] ${req.requestId || '-'} ${req.method} ${req.path} -> status: ${status}, category: ${category}, code: ${err.code || 'UNKNOWN'}`
+  );
 
   if (err.isOperational) {
     return res.status(err.status).json({
       success: false,
       error: {
         code: err.code,
+        category,
         message: err.message,
-        details: err.details
+        details: err.details,
+        requestId: req.requestId,
+      }
+    });
+  }
+
+  if (isDbErr) {
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: 'DATABASE_UNAVAILABLE',
+        category: 'DATABASE',
+        message: 'The booking and authentication service is temporarily unavailable. Please try again shortly.',
+        requestId: req.requestId,
       }
     });
   }
@@ -69,7 +124,9 @@ const errorMiddleware = (err, req, res, next) => {
     success: false,
     error: {
       code: 'INTERNAL_ERROR',
-      message: 'An unexpected error occurred'
+      category: 'INTERNAL_SERVER_ERROR',
+      message: 'A server error occurred. Please try again shortly.',
+      requestId: req.requestId,
     }
   });
 };
@@ -100,5 +157,8 @@ module.exports = {
   asyncHandler,
   errorMiddleware,
   sendSuccess,
-  sendError
+  sendError,
+  isDatabaseError,
+  categorizeError,
+  sanitizeErrorMessage,
 };

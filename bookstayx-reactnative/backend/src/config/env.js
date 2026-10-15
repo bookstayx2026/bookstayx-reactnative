@@ -11,6 +11,18 @@ if (missingVariables.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVariables.join(', ')}`);
 }
 
+const placeholderKeywords = ['PROJECT_REF', 'URL_ENCODED_PASSWORD', 'generate-a-strong'];
+const placeholderVars = requiredVariables.filter((name) => {
+  const val = process.env[name] || '';
+  return placeholderKeywords.some((keyword) => val.includes(keyword));
+});
+
+if (placeholderVars.length > 0) {
+  console.error(
+    `[CRITICAL CONFIG ERROR] The following environment variables contain unpopulated template placeholders: ${placeholderVars.join(', ')}. Please update them with real credentials in Vercel Project Settings.`
+  );
+}
+
 const parsePositiveInteger = (value, fallback) => {
   const parsed = Number.parseInt(value || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
