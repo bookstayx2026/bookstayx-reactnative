@@ -16,6 +16,38 @@ const parsePositiveInteger = (value, fallback) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const parseCorsOrigins = () => {
+  const defaults = [
+    'https://bookstayx.com',
+    'https://www.bookstayx.com',
+  ];
+
+  if (process.env.NODE_ENV !== 'production') {
+    defaults.push(
+      'http://localhost:8081',
+      'http://localhost:8082',
+      'http://localhost:19006',
+      'http://localhost:5001'
+    );
+  }
+
+  const configured = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const dynamic = [
+    process.env.FRONTEND_URL,
+    process.env.PUBLIC_APP_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : null,
+  ].filter(Boolean);
+
+  return Array.from(new Set([...defaults, ...configured, ...dynamic].map((o) => o.replace(/\/+$/, ''))));
+};
+
 const env = Object.freeze({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parsePositiveInteger(process.env.PORT, 5001),
@@ -23,10 +55,7 @@ const env = Object.freeze({
   databaseSsl:
     process.env.DATABASE_SSL === 'true' || process.env.NODE_ENV === 'production',
   databasePoolMax: parsePositiveInteger(process.env.DATABASE_POOL_MAX, 10),
-  corsOrigins: (process.env.CORS_ORIGINS || '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins: parseCorsOrigins(),
   enableBackgroundJobs: process.env.ENABLE_BACKGROUND_JOBS === 'true',
   enableDevLogin:
     process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_LOGIN === 'true',

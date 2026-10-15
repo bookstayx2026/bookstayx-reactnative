@@ -17,24 +17,57 @@ const isDevelopmentHost = (hostname) =>
   hostname === '::1' ||
   isPrivateIpv4(hostname);
 
+const normalizeOrigin = (origin) => {
+  if (!origin || typeof origin !== 'string') return '';
+  const trimmed = origin.trim();
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase().replace(/\/+$/, '');
+  }
+};
+
+const isBookStayXDomain = (hostname) => {
+  const lower = hostname.toLowerCase();
+  return (
+    lower === 'bookstayx.com' ||
+    lower.endsWith('.bookstayx.com') ||
+    lower.endsWith('.vercel.app')
+  );
+};
+
 const isCorsOriginAllowed = (origin, environment) => {
-  if (!origin || environment.corsOrigins.includes(origin)) {
+  if (!origin) {
     return true;
   }
 
-  if (environment.nodeEnv === 'production') {
-    return false;
+  const normalizedOrigin = normalizeOrigin(origin);
+  const rawOrigins = environment?.corsOrigins || [];
+  const normalizedConfigured = rawOrigins.map(normalizeOrigin);
+
+  if (rawOrigins.includes(origin) || normalizedConfigured.includes(normalizedOrigin)) {
+    return true;
   }
 
   try {
     const parsed = new URL(origin);
-    return (
-      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-      isDevelopmentHost(parsed.hostname)
-    );
+    const isHttps = parsed.protocol === 'https:';
+    const isHttp = parsed.protocol === 'http:';
+
+    // Allow official BookStayX domains and preview deployments over HTTPS
+    if (isHttps && isBookStayXDomain(parsed.hostname)) {
+      return true;
+    }
+
+    if (environment?.nodeEnv === 'production') {
+      return false;
+    }
+
+    return (isHttp || isHttps) && isDevelopmentHost(parsed.hostname);
   } catch {
     return false;
   }
 };
 
-module.exports = { isCorsOriginAllowed };
+module.exports = { isCorsOriginAllowed, normalizeOrigin, isBookStayXDomain };

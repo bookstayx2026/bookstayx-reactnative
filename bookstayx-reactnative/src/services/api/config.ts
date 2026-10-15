@@ -25,18 +25,39 @@ function inferDevelopmentApiUrl() {
     : "http://localhost:5001/api";
 }
 
-const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-const isDev = typeof __DEV__ !== "undefined" ? __DEV__ : process.env.NODE_ENV !== "production";
+function resolveApiBaseUrl(): string | null {
+  const configured = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  const isDev = typeof __DEV__ !== "undefined" ? Boolean(__DEV__) : process.env.NODE_ENV !== "production";
+
+  if (Platform.OS === "web") {
+    // In production web build, always default to relative /api for same-project routing
+    if (!isDev) {
+      if (!configured || configured.toLowerCase() === "auto") {
+        return "/api";
+      }
+      return trimSlash(configured);
+    }
+
+    // In web development: if "auto", empty, or unset, use local development server
+    if (!configured || configured.toLowerCase() === "auto") {
+      return inferDevelopmentApiUrl();
+    }
+    return trimSlash(configured);
+  }
+
+  // Native mobile (Android / iOS):
+  if (!configured || configured.toLowerCase() === "auto") {
+    if (isDev) {
+      return inferDevelopmentApiUrl();
+    }
+    return "https://bookstayx.com/api";
+  }
+
+  return trimSlash(configured);
+}
 
 export const apiConfig: ApiConfig = {
-  baseUrl:
-    configuredBaseUrl === "auto" || (!configuredBaseUrl && isDev)
-      ? inferDevelopmentApiUrl()
-      : configuredBaseUrl
-        ? trimSlash(configuredBaseUrl)
-        : Platform.OS === "web"
-          ? "/api"
-          : null,
+  baseUrl: resolveApiBaseUrl(),
   ownerPhone: process.env.EXPO_PUBLIC_BOOKING_OWNER_PHONE || null,
   adminPhone: process.env.EXPO_PUBLIC_BOOKING_ADMIN_PHONE || null,
   timeoutMs: 12_000,
