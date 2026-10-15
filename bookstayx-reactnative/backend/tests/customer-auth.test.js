@@ -6,11 +6,6 @@ const { OtpService } = require('../services/otpService');
 const { JWT_SECRET } = require('../utils/jwt');
 const { pool } = require('../db');
 
-test.after(async () => {
-  try {
-    await pool.end();
-  } catch (_) {}
-});
 
 test('OtpService accepts demo OTP 0000 for customer_signup in development', async () => {
   const mobile = '9876543210';

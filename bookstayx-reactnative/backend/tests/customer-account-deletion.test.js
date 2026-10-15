@@ -15,9 +15,6 @@ test('Customer Account Deletion Test Suite', async (t) => {
 
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
-    try {
-      await pool.end();
-    } catch (_) {}
   });
 
   // Helper to create a test customer

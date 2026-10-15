@@ -12,9 +12,6 @@ test('Customer Full Auth Flow: Signup with demo OTP 0000 and Login with password
 
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
-    try {
-      await pool.end();
-    } catch (_) {}
   });
 
   const testEmail = `testuser_${Date.now()}@bookstayx.test`;

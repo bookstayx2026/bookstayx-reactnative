@@ -44,8 +44,8 @@ const isDatabaseError = (err) => {
   if (!err) return false;
   if (err.name === 'DatabaseError') return true;
   if (typeof err.code === 'string') {
-    if (/^(08|28|3D|57)/i.test(err.code)) return true;
-    if (['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN'].includes(err.code)) return true;
+    if (/^(08|28|3D|53|57)/i.test(err.code)) return true;
+    if (['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'XX000'].includes(err.code)) return true;
   }
   if (typeof err.message === 'string') {
     const msg = err.message.toLowerCase();
@@ -55,7 +55,13 @@ const isDatabaseError = (err) => {
       msg.includes('tenant or user not found') ||
       msg.includes('connection timeout') ||
       msg.includes('client has already been connected') ||
-      msg.includes('pool error')
+      msg.includes('pool error') ||
+      msg.includes('max clients reached') ||
+      msg.includes('emaxconnsession') ||
+      msg.includes('pool_size') ||
+      msg.includes('too many clients') ||
+      msg.includes('cannot use a pool after calling end') ||
+      msg.includes('remaining connection slots are reserved')
     );
   }
   return false;
@@ -94,6 +100,10 @@ const errorMiddleware = (err, req, res, next) => {
   console.error(
     `[DIAGNOSTIC] ${req.requestId || '-'} ${req.method} ${req.path} -> status: ${status}, category: ${category}, code: ${err.code || 'UNKNOWN'}`
   );
+  if (process.env.NODE_ENV !== 'production' && !err.isOperational) {
+    const safeMsg = sanitizeErrorMessage(err.message || String(err));
+    console.error(`[LOCAL DEV ERROR] ${req.method} ${req.path}:`, safeMsg);
+  }
 
   if (err.isOperational) {
     return res.status(err.status).json({

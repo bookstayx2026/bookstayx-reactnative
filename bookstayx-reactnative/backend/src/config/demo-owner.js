@@ -7,13 +7,14 @@ const DEMO_OWNER_PROPERTY_IDS = Object.freeze({
 
 function normalizeDemoOwnerCategory(value) {
   const category = String(value || '').toLowerCase().trim();
-  if (['camping_cottages', 'campings_cottages', 'camping', 'campings'].includes(category)) {
+  if (!category) return 'villa';
+  if (['camping_cottages', 'campings_cottages', 'camping', 'campings', 'bsx-camp01'].includes(category)) {
     return 'camping_cottages';
   }
-  if (['resort', 'hotel'].includes(category)) return 'resort';
-  if (category === 'homestay') return 'homestay';
-  if (['villa', 'villas'].includes(category)) return 'villa';
-  return null;
+  if (['resort', 'hotel', 'bsx-resort01'].includes(category)) return 'resort';
+  if (['homestay', 'bsx-homestay01'].includes(category)) return 'homestay';
+  if (['villa', 'villas', 'bsx-v001'].includes(category)) return 'villa';
+  return 'villa';
 }
 
 function getDemoOwnerPropertyId(category) {
