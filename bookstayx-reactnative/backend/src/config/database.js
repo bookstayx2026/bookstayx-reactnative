@@ -1,24 +1,13 @@
 const { Pool } = require('pg');
 const { env } = require('./env');
 
+/**
+ * Trims whitespace and removes wrapping quotes from connection strings.
+ * Preserves the exact user, password, and parameters without destructive rewrites.
+ */
 const normalizeDatabaseUrl = (input) => {
   if (!input || typeof input !== 'string') return input;
-  let url = input.trim().replace(/^['"`]+|['"`]+$/g, '');
-
-  // 1. Fix literal brackets around password from Supabase template: [YOUR-PASSWORD] -> YOUR-PASSWORD
-  url = url.replace(/(:\/\/[^:]+:)(?:\[)([^\]]+)(?:\])(@)/, '$1$2$3');
-
-  // 2. Fix double-encoded percent signs in password (e.g. %2540 -> %40)
-  url = url.replace(/(:\/\/[^:]+:)([^@]+)(@)/, (m, p1, pass, p3) => {
-    return p1 + pass.replace(/%25([0-9a-fA-F]{2})/g, '%$1') + p3;
-  });
-
-  // 3. Fix missing Supabase project ref on pooler host (postgres -> postgres.fpufyiltalgtxbwvjjmo)
-  if (url.includes('pooler.supabase.com') && url.includes('://postgres:')) {
-    url = url.replace('://postgres:', '://postgres.fpufyiltalgtxbwvjjmo:');
-  }
-
-  return url;
+  return input.trim().replace(/^['"`]+|['"`]+$/g, '');
 };
 
 const pool = new Pool({

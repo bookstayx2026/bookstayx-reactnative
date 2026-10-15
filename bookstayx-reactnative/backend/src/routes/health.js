@@ -1,8 +1,47 @@
 const express = require('express');
 const { pool } = require('../config/database');
+const { env } = require('../config/env');
 const { sanitizeErrorMessage } = require('../../middleware/errorHandler');
 
 const router = express.Router();
+
+function getSafeDatabaseDiagnostics() {
+  try {
+    const rawUrl = env.databaseUrl || '';
+    if (!rawUrl) {
+      return {
+        configured: false,
+        error: 'DATABASE_URL is not set in environment variables',
+      };
+    }
+
+    const cleanUrl = rawUrl.trim().replace(/^['"`]+|['"`]+$/g, '');
+    const parsed = new URL(cleanUrl);
+
+    return {
+      configured: true,
+      protocol: parsed.protocol,
+      host: parsed.hostname,
+      port: parsed.port || '5432',
+      database: parsed.pathname.replace(/^\//, ''),
+      username: parsed.username,
+      usernameFormat: parsed.username.includes('.') ? 'tenant_prefixed' : 'bare_user',
+      isPoolerHost: parsed.hostname.includes('pooler.supabase.com'),
+      expectedUsernameFormat: parsed.hostname.includes('pooler.supabase.com')
+        ? 'postgres.[project-ref]'
+        : 'postgres',
+      hasPassword: Boolean(parsed.password),
+      passwordLength: parsed.password ? parsed.password.length : 0,
+      ssl: env.databaseSsl,
+    };
+  } catch (err) {
+    return {
+      configured: Boolean(env.databaseUrl),
+      parseError: 'Unable to parse DATABASE_URL as a valid URL',
+      rawLength: env.databaseUrl ? env.databaseUrl.length : 0,
+    };
+  }
+}
 
 router.get('/', (req, res) => {
   res.json({
@@ -14,6 +53,8 @@ router.get('/', (req, res) => {
 });
 
 router.get('/database', async (req, res) => {
+  const diagnostics = getSafeDatabaseDiagnostics();
+
   try {
     const result = await pool.query(
       `SELECT
@@ -28,6 +69,7 @@ router.get('/database', async (req, res) => {
       service: 'bookstayx-api',
       status: 'healthy',
       database: result.rows[0],
+      diagnostics,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -45,6 +87,7 @@ router.get('/database', async (req, res) => {
         name: error.name || 'Error',
         message: safeMsg || 'Database connection could not be established',
       },
+      diagnostics,
       timestamp: new Date().toISOString(),
     });
   }
