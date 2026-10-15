@@ -10,7 +10,10 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "build": "npm --prefix backend install && npx expo export -p web",
+    "postinstall": "npm --prefix backend install",
+    "db:migrate": "node backend/scripts/run-migrations.js"
   },
   "dependencies": {
     "@expo-google-fonts/cormorant-garamond": "0.4.1",

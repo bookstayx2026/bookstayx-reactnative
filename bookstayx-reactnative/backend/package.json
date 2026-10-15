@@ -12,7 +12,8 @@
     "db:check": "node scripts/check-db.js",
     "db:init": "node scripts/init-db.js",
     "db:seed:catalogue": "node scripts/seed-catalogue.js",
-    "test": "node --test --test-isolation=none tests/*.test.js"
+    "test": "node --test --test-isolation=none tests/*.test.js",
+    "db:migrate": "node scripts/run-migrations.js"
   },
   "engines": {
     "node": ">=20"

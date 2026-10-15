@@ -34,14 +34,16 @@ export const apiConfig: ApiConfig = {
       ? inferDevelopmentApiUrl()
       : configuredBaseUrl
         ? trimSlash(configuredBaseUrl)
-        : null,
+        : Platform.OS === "web"
+          ? "/api"
+          : null,
   ownerPhone: process.env.EXPO_PUBLIC_BOOKING_OWNER_PHONE || null,
   adminPhone: process.env.EXPO_PUBLIC_BOOKING_ADMIN_PHONE || null,
   timeoutMs: 12_000,
 };
 
 export function apiConfigurationHint() {
-  return "Set EXPO_PUBLIC_API_BASE_URL=auto for local development or use the deployed API URL.";
+  return "Set EXPO_PUBLIC_API_BASE_URL=auto for local development or /api for production on Vercel.";
 }
 
 export const isApiConfigured = () => Boolean(apiConfig.baseUrl);
