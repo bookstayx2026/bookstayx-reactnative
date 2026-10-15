@@ -18,11 +18,14 @@ CREATE TABLE IF NOT EXISTS customers (
   full_name VARCHAR(255) NOT NULL DEFAULT 'BookStayX Guest',
   email VARCHAR(255),
   mobile VARCHAR(20) UNIQUE NOT NULL,
+  password_hash VARCHAR(255),
   expo_push_token TEXT,
   last_login TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_email_unique ON customers(LOWER(email)) WHERE email IS NOT NULL;
+
 
 -- Create locations table for multi-locality (Kokan & Pune regions)
 CREATE TABLE IF NOT EXISTS locations (

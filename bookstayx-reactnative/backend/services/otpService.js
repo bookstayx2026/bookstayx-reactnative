@@ -13,7 +13,9 @@ const MSG91_OTP_VAR = process.env.MSG91_OTP_VAR || "otp";
 // ── Security config ───────────────────────────────────────────────────────────
 const IS_TEST_MODE = process.env.OTP_TEST_MODE === "true";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const IS_DEV_OR_DEMO = !IS_PRODUCTION || IS_TEST_MODE;
 const TEST_OTP = "123456";
+const DEMO_SIGNUP_OTP = "0000";
 
 // HMAC-SHA256 secret — required in production, falls back in test/dev only
 const OTP_HMAC_SECRET = process.env.OTP_HMAC_SECRET;
@@ -122,13 +124,25 @@ const OtpService = {
     }
 
     if (
-      !["owner_login", "customer_login", "referral_login", "referral_register"].includes(purpose)
+      !["owner_login", "customer_login", "customer_signup", "customer_deletion", "referral_login", "referral_register"].includes(purpose)
     ) {
       return { success: false, status: 400, message: "Invalid request type." };
     }
 
     // ── DB presence checks (business logic, unchanged) ───────────────────────
-    if (purpose === "owner_login") {
+    if (purpose === "customer_deletion") {
+      const custCheck = await pool.query(
+        "SELECT id FROM customers WHERE mobile = $1",
+        [cleanMobile],
+      );
+      if (custCheck.rows.length === 0) {
+        return {
+          success: false,
+          status: 404,
+          message: "No registered customer account found with this mobile number.",
+        };
+      }
+    } else if (purpose === "owner_login") {
       const ownerCheck = await pool.query(
         "SELECT id FROM owners WHERE owner_otp_number = $1",
         [cleanMobile],
@@ -187,6 +201,22 @@ const OtpService = {
     const hashedOtp = hashOtp(otp);
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MS);
     const otpLimitLeft = Math.max(0, RATE_LIMIT_PER_HOUR - (count + 1));
+
+    // ── Demo customer signup/deletion mode: store 0000 record without SMS ────
+    if (["customer_signup", "customer_deletion"].includes(purpose) && IS_DEV_OR_DEMO) {
+      await OtpRepository.invalidatePrevious(cleanMobile, purpose);
+      await OtpRepository.createOtp(cleanMobile, hashOtp(DEMO_SIGNUP_OTP), purpose, expiresAt);
+      console.log(
+        `[OTP] Demo ${purpose} mode — record stored for ${cleanMobile} (purpose: ${purpose}). Use ${DEMO_SIGNUP_OTP} to verify.`,
+      );
+      return {
+        success: true,
+        message: "Verification code sent. (Demo OTP: 0000)",
+        testMode: true,
+        demoOtp: DEMO_SIGNUP_OTP,
+        otpLimitLeft,
+      };
+    }
 
     // ── Test mode: store record without SMS ──────────────────────────────────
     // (SMS is skipped deliberately; we still store the record so verifyOtp
@@ -264,18 +294,25 @@ const OtpService = {
       };
     }
 
-    if (!otp || typeof otp !== "string" || !/^\d{6}$/.test(otp)) {
+    if (!otp || typeof otp !== "string" || !/^\d{4,6}$/.test(otp)) {
       return {
         success: false,
         status: 400,
-        message: "OTP must be a 6-digit number.",
+        message: "OTP must be a valid number.",
       };
     }
 
     if (
-      !["owner_login", "customer_login", "referral_login", "referral_register"].includes(purpose)
+      !["owner_login", "customer_login", "customer_signup", "customer_deletion", "referral_login", "referral_register"].includes(purpose)
     ) {
       return { success: false, status: 400, message: "Invalid request type." };
+    }
+
+    // ── Demo customer signup/deletion mode: accept 0000 strictly in dev/demo mode ─────
+    if (["customer_signup", "customer_deletion"].includes(purpose) && IS_DEV_OR_DEMO && otp === DEMO_SIGNUP_OTP) {
+      const record = await OtpRepository.getValidOtp(cleanMobile, purpose);
+      if (record) await OtpRepository.deleteOtp(record.id);
+      return { success: true, message: "Phone verified successfully." };
     }
 
     // ── Test mode: accept hardcoded OTP without DB hash check ────────────────

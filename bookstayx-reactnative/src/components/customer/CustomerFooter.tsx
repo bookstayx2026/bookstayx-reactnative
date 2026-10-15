@@ -94,10 +94,10 @@ export function CustomerFooter() {
               <Text style={styles.linkText}>Refund & Cancellation</Text>
             </Pressable>
             <Pressable
-              onPress={() => navigate("/terms")}
+              onPress={() => navigate("/account-deletion")}
               style={({ pressed }) => [styles.linkItem, pressed && styles.linkPressed]}
             >
-              <Text style={styles.linkText}>Guest Guidelines</Text>
+              <Text style={styles.linkText}>Delete Account</Text>
             </Pressable>
           </View>
 

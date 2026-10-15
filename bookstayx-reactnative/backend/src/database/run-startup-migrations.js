@@ -202,6 +202,8 @@ const migrations = [
   `ALTER TABLE bookings ADD COLUMN IF NOT EXISTS unit_quantity INTEGER DEFAULT 1`,
   `ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS unit_quantity INTEGER DEFAULT 1`,
   `ALTER TABLE owner_booking_requests ADD COLUMN IF NOT EXISTS unit_quantity INTEGER DEFAULT 1`,
+  `ALTER TABLE customers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_email_unique ON customers(LOWER(email)) WHERE email IS NOT NULL`,
 ];
 
 async function runStartupMigrations() {

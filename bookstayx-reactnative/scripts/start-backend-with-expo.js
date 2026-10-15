@@ -114,7 +114,7 @@ async function startBackendWithExpo() {
 
   console.log(`[BookStayX] Starting backend at http://localhost:${port} ...`);
 
-  const child = spawn(process.execPath, [backendEntry], {
+  const child = spawn(process.execPath, ['--watch', backendEntry], {
     cwd: backendDirectory,
     env: process.env,
     stdio: 'inherit',
