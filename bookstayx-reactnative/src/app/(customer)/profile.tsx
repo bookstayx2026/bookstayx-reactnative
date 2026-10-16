@@ -1,14 +1,12 @@
 import { useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import {
-  AlertTriangle,
   ArrowRight,
   Bell,
   CalendarCheck,
   Camera,
   Check,
-  CheckSquare,
   ChevronRight,
   CircleHelp,
   Gift,
@@ -21,7 +19,6 @@ import {
   Phone,
   ShieldCheck,
   Sparkles,
-  Square,
   Trash2,
   UserCheck,
   UserRound,
@@ -33,7 +30,6 @@ import { useCustomerChrome, useCustomerData } from "@/components/customer";
 import { useAuth } from "@/components/auth";
 import { colors, fontFamilies, layout, radii } from "@/theme";
 import { useIsDesktop } from "@/hooks/use-window-class";
-import { deleteCustomerAccountInApp } from "@/services/api/auth";
 
 const AVATAR_URL =
   "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&h=240&fit=crop&crop=faces";
@@ -57,39 +53,6 @@ export default function ProfileScreen() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const isDesktop = useIsDesktop();
 
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [deletePassword, setDeletePassword] = useState("");
-  const [deleteAgreed, setDeleteAgreed] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
-
-  const handleDeleteAccount = async () => {
-    if (!deletePassword) {
-      setDeleteError("Please enter your password to confirm account deletion.");
-      return;
-    }
-    if (!deleteAgreed) {
-      setDeleteError("Please confirm that you understand account deletion is permanent.");
-      return;
-    }
-    if (!session?.tokens?.accessToken) {
-      setDeleteError("Session expired. Please log in again.");
-      return;
-    }
-
-    setDeleteLoading(true);
-    setDeleteError("");
-    try {
-      await deleteCustomerAccountInApp(deletePassword, session.tokens.accessToken);
-      setDeleteModalVisible(false);
-      await signOut();
-      router.replace("/login");
-    } catch (caught) {
-      setDeleteError(caught instanceof Error ? caught.message : "Failed to delete account. Please try again.");
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
 
   if (!ready) {
     return (
@@ -229,12 +192,7 @@ export default function ProfileScreen() {
           title="Delete Account"
           description="Permanently erase your account and personal data"
           tone="danger"
-          onPress={() => {
-            setDeleteError("");
-            setDeletePassword("");
-            setDeleteAgreed(false);
-            setDeleteModalVisible(true);
-          }}
+          onPress={() => router.push("/delete-account")}
         />
       </View>
     </View>
@@ -353,115 +311,7 @@ export default function ProfileScreen() {
           {leftColumn}
           {rightColumn}
         </View>
-        {/* Account Deletion Confirmation Modal */}
-        <Modal
-          visible={deleteModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => {
-            if (!deleteLoading) setDeleteModalVisible(false);
-          }}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <View style={styles.modalIconWrap}>
-                  <AlertTriangle size={22} color="#EF4444" strokeWidth={2.2} />
-                </View>
-                <View style={styles.modalTitleWrap}>
-                  <Text style={styles.modalTitle}>Delete BookStayX Account</Text>
-                  <Text style={styles.modalSubtitle}>
-                    This action is permanent and cannot be undone.
-                  </Text>
-                </View>
-              </View>
 
-              <View style={styles.modalNoticeBox}>
-                <View style={styles.noticeItem}>
-                  <View style={styles.noticeBullet} />
-                  <Text style={styles.noticeText}>
-                    <Text style={styles.noticeBold}>What will be erased:</Text> Your profile details, contact information, saved villas, push tokens, and login credentials will be permanently erased immediately.
-                  </Text>
-                </View>
-                <View style={styles.noticeItem}>
-                  <View style={styles.noticeBullet} />
-                  <Text style={styles.noticeText}>
-                    <Text style={styles.noticeBold}>Statutory data retention:</Text> In compliance with Indian tax, accounting, and consumer protection laws, completed booking invoices and financial transaction ledgers are retained for legal audit compliance, with all personal account links removed.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.modalInputWrap}>
-                <Text style={styles.modalInputLabel}>Confirm your password to authorize deletion</Text>
-                <TextInput
-                  secureTextEntry
-                  value={deletePassword}
-                  onChangeText={(val) => {
-                    setDeletePassword(val);
-                    setDeleteError("");
-                  }}
-                  placeholder="Enter your account password"
-                  placeholderTextColor={colors.textMuted}
-                  style={styles.modalInput}
-                  editable={!deleteLoading}
-                />
-              </View>
-
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityLabel="Confirm permanent deletion"
-                style={styles.confirmCheckboxRow}
-                onPress={() => setDeleteAgreed(!deleteAgreed)}
-              >
-                {deleteAgreed ? (
-                  <CheckSquare size={18} color="#EF4444" />
-                ) : (
-                  <Square size={18} color={colors.textMuted} />
-                )}
-                <Text style={styles.checkboxText}>
-                  I confirm that I want to permanently delete my BookStayX account and understand this action cannot be reversed.
-                </Text>
-              </Pressable>
-
-              {deleteError ? (
-                <View style={styles.modalErrorBanner}>
-                  <Text style={styles.modalErrorText}>{deleteError}</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.modalButtonRow}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancel deletion"
-                  onPress={() => {
-                    if (!deleteLoading) setDeleteModalVisible(false);
-                  }}
-                  style={styles.modalCancelBtn}
-                  disabled={deleteLoading}
-                >
-                  <Text style={styles.modalCancelText}>Keep My Account</Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Permanently delete account"
-                  onPress={handleDeleteAccount}
-                  style={[
-                    styles.modalDeleteBtn,
-                    (!deleteAgreed || !deletePassword || deleteLoading) && styles.modalDeleteBtnDisabled,
-                  ]}
-                  disabled={deleteLoading || !deleteAgreed || !deletePassword}
-                >
-                  {deleteLoading ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.modalDeleteText}>Permanently Delete</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
       </View>
     </AppScreen>
   );

@@ -35,7 +35,7 @@ const PRIVACY_SECTIONS = [
   },
   {
     title: "9. Account Deletion & User Data Erasure",
-    body: "In full compliance with Google Play Developer Program policies:\n• In-App Deletion: Available directly in My Account / Profile (/profile). Select 'Delete Account', re-enter your password to confirm ownership, and check the confirmation box. Deletion is immediate and atomic.\n• Public Web Deletion: Accessible without logging in at https://bookstayx.com/account-deletion (and locally at http://localhost:8081/account-deletion). Verify ownership via account password or phone OTP to immediately delete your account.\n• Manual Email Request: You may email support@bookstayx.com with the subject 'Account Deletion Request' from your registered contact details.\n• Data Erased Immediately: Personal profile, email, phone number, password hash, active sessions, in-app notifications, and OTP records are permanently destroyed.",
+    body: "In full compliance with Google Play Developer Program policies:\n• In-App Deletion: Available directly in My Account / Profile (/profile) and the sidebar menu, navigating to the dedicated Delete Account route (/delete-account). Re-enter your password to confirm ownership, and check the confirmation box. Deletion is immediate and atomic.\n• Public Web Deletion: Accessible without logging in at https://bookstayx.com/delete-account (and locally at http://localhost:8081/delete-account). Verify ownership via account password or phone OTP to immediately delete your account.\n• Manual Email Request: You may email support@bookstayx.com with the subject 'Account Deletion Request' from your registered contact details.\n• Data Erased Immediately: Personal profile, email, phone number, password hash, active sessions, in-app notifications, and OTP records are permanently destroyed.",
   },
   {
     title: "10. Statutory Data Retention Exceptions",
@@ -51,7 +51,7 @@ const PRIVACY_SECTIONS = [
   },
   {
     title: "13. Contact & Grievance Redressal",
-    body: "Platform: BookStayX\nOperating Entity: BookStayX Hospitality Services\nSupport Email: support@bookstayx.com\nConcierge Helpline: +91 8806092609\nPublic Deletion Page: https://bookstayx.com/account-deletion\nOperational Region: Maharashtra, India\nFor privacy inquiries or grievances, contact us at support@bookstayx.com.",
+    body: "Platform: BookStayX\nOperating Entity: BookStayX Hospitality Services\nSupport Email: support@bookstayx.com\nConcierge Helpline: +91 8806092609\nPublic Deletion Page: https://bookstayx.com/delete-account\nOperational Region: Maharashtra, India\nFor privacy inquiries or grievances, contact us at support@bookstayx.com.",
   },
 ];
 

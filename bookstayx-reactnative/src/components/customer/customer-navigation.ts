@@ -10,6 +10,7 @@ import {
   RefreshCcw,
   Scale,
   Shield,
+  Trash2,
   User,
 } from "lucide-react-native";
 
@@ -45,6 +46,7 @@ export const policyNavItems: CustomerNavItem[] = [
   { href: "/terms", label: "Terms & Privacy", shortLabel: "Terms", icon: Scale },
   { href: "/privacy", label: "Privacy Policy", shortLabel: "Privacy", icon: Shield },
   { href: "/refund-policy", label: "Refund Policy", shortLabel: "Refunds", icon: RefreshCcw },
+  { href: "/delete-account", label: "Delete Account", shortLabel: "Deletion", icon: Trash2 },
 ];
 
 export const notificationNavItem: CustomerNavItem = {

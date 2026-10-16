@@ -2,7 +2,7 @@ import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "
 import Animated, { SlideInRight } from "react-native-reanimated";
 import { Image } from "expo-image";
 import { usePathname, useRouter, type Href } from "expo-router";
-import { Building2, LogOut, User, X } from "lucide-react-native";
+import { Building2, LogOut, Trash2, User, X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PressableScale } from "@/components/foundation";
 import { useIsDesktop } from "@/hooks/use-window-class";
@@ -115,22 +115,37 @@ export function CustomerSideMenu() {
               <MenuRow item={notificationNavItem} onSelect={select} />
 
               {isCustomer ? (
-                <PressableScale
-                  accessibilityLabel="Sign out"
-                  onPress={async () => {
-                    closeMenu();
-                    await signOut();
-                    router.push("/");
-                  }}
-                  style={[styles.row, styles.logoutRow]}
-                >
-                  <View style={styles.rowInner}>
-                    <View style={[styles.rowIcon, styles.logoutIcon]}>
-                      <LogOut color="#EF4444" size={15} strokeWidth={1.7} />
+                <>
+                  <PressableScale
+                    accessibilityLabel="Delete account"
+                    onPress={() => select("/delete-account")}
+                    style={[styles.row, styles.deleteAccountRow]}
+                  >
+                    <View style={styles.rowInner}>
+                      <View style={[styles.rowIcon, styles.deleteAccountIcon]}>
+                        <Trash2 color="#EF4444" size={15} strokeWidth={1.7} />
+                      </View>
+                      <Text style={[styles.rowLabel, styles.deleteAccountLabel]}>Delete Account</Text>
                     </View>
-                    <Text style={[styles.rowLabel, styles.logoutLabel]}>Sign Out</Text>
-                  </View>
-                </PressableScale>
+                  </PressableScale>
+
+                  <PressableScale
+                    accessibilityLabel="Sign out"
+                    onPress={async () => {
+                      closeMenu();
+                      await signOut();
+                      router.push("/");
+                    }}
+                    style={[styles.row, styles.logoutRow]}
+                  >
+                    <View style={styles.rowInner}>
+                      <View style={[styles.rowIcon, styles.logoutIcon]}>
+                        <LogOut color="#EF4444" size={15} strokeWidth={1.7} />
+                      </View>
+                      <Text style={[styles.rowLabel, styles.logoutLabel]}>Sign Out</Text>
+                    </View>
+                  </PressableScale>
+                </>
               ) : isOwner ? (
                 <PressableScale
                   accessibilityLabel="Open owner portal"
@@ -279,6 +294,13 @@ const styles = StyleSheet.create({
   rowLabelActive: { color: colors.gold },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: "rgba(255,255,255,0.1)", marginVertical: 10 },
   menuBottom: { marginTop: spacing.xxl, gap: 6 },
+  deleteAccountRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+    backgroundColor: "rgba(239, 68, 68, 0.05)",
+  },
+  deleteAccountIcon: { borderColor: "rgba(239, 68, 68, 0.25)", backgroundColor: "rgba(239, 68, 68, 0.1)" },
+  deleteAccountLabel: { color: "#F87171" },
   logoutRow: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(239, 68, 68, 0.25)",
